@@ -1,0 +1,39 @@
+name: Bug report
+description: Something went wrong during a sync, scan, or diff.
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: dapctl version
+      description: Output of `dapctl --version`.
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: OS + architecture (e.g. macOS 14 arm64, Ubuntu 24.04 x86_64, Windows 11 + WSL).
+    validations:
+      required: true
+  - type: input
+    id: dap
+    attributes:
+      label: DAP model
+      description: If relevant — which device was the target.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Commands you ran and what went wrong. Paste the human log.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+  - type: textarea
+    id: jsonl
+    attributes:
+      label: JSONL log excerpt
+      description: Relevant lines from the JSONL log under $XDG_STATE_HOME/dapctl/runs/.

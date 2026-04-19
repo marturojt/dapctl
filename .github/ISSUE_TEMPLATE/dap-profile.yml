@@ -1,0 +1,41 @@
+name: New DAP profile
+description: Propose a DAP profile for a device dapctl does not yet support.
+labels: ["dap-profile"]
+body:
+  - type: input
+    id: model
+    attributes:
+      label: DAP vendor and model
+      placeholder: "e.g. FiiO M21 / Astell&Kern SR35 / HiBy R6 III"
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware version you tested on
+    validations:
+      required: true
+  - type: textarea
+    id: sources
+    attributes:
+      label: Sources backing your claims
+      description: Links to vendor spec pages, head-fi threads, reviews, or your own measurements.
+    validations:
+      required: true
+  - type: textarea
+    id: toml
+    attributes:
+      label: Proposed profile TOML
+      description: Paste the full content of the TOML file you propose.
+      render: toml
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Checklist
+      options:
+        - label: I included a fixture under tests/fixtures/profiles/<id>/
+          required: true
+        - label: The id matches the filename
+          required: true

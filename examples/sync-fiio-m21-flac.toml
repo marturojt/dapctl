@@ -1,0 +1,21 @@
+schema_version = 1
+
+[profile]
+name         = "fiio-m21-flac"
+source       = "/mnt/music"
+destination  = "auto:fiio-m21"   # or an explicit path like "/Volumes/FIIO M21/Music"
+dap_profile  = "fiio-m21"
+mode         = "mirror"          # additive | mirror | selective
+
+[filters]
+include_globs = ["**/*.flac", "**/*.dsf", "**/*.mp3"]
+exclude_globs = ["**/demo/**", "**/_wip/**"]
+
+[transfer]
+verify          = "size_mtime"   # none | size_mtime | checksum
+dry_run_default = true           # enforced when mode = "mirror"
+parallelism     = 4
+
+[transcode]
+enabled = false
+# rules = [{ from = "DSF", to = "FLAC", params = "-ar 176400 -sample_fmt s32" }]

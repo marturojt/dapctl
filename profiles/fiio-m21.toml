@@ -1,0 +1,47 @@
+schema_version = 1
+
+[dap]
+id           = "fiio-m21"
+name         = "FiiO M21"
+vendor       = "FiiO"
+firmware_min = "1.0.0"
+sources      = [
+  "https://www.fiio.com/m21",
+  # Add head-fi or vendor links confirming capability claims below.
+]
+
+[filesystem]
+preferred          = "exFAT"
+supported          = ["FAT32", "exFAT"]
+# exFAT allows 255 UTF-16 units; on FAT32 the effective cap is 255 chars LFN.
+max_filename_bytes = 255
+max_path_bytes     = 4096
+case_sensitive     = false
+
+[codecs]
+lossless           = ["FLAC", "ALAC", "WAV", "APE", "DSF", "DFF"]
+lossy              = ["MP3", "AAC", "OGG", "OPUS"]
+max_sample_rate_hz = 768000
+max_bit_depth      = 32
+dsd                = ["DSD64", "DSD128", "DSD256", "DSD512"]
+
+[layout]
+music_root                = "/Music"
+prefers_artist_album_tree = true
+
+[exclude]
+globs = [
+  ".thumbnails/**",
+  ".database_uuid",
+  ".nomedia",
+  "*.db-journal",
+  "System Volume Information/**",
+  "$RECYCLE.BIN/**",
+  ".Trash-*/**",
+  ".DS_Store",
+  "._*",
+]
+
+[quirks]
+warn_on_embedded_art_mb = 10
+normalize_unicode       = "NFC"
