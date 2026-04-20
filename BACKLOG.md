@@ -10,7 +10,7 @@ requirement N of the MVP.
 
 ---
 
-## Milestone 0 — Scaffolding  ·  *current*
+## Milestone 0 — Scaffolding  ·  *done*
 
 - [x] Cargo manifest with dependency inventory
 - [x] Module skeleton under `src/` compiling against stub implementations
@@ -24,7 +24,7 @@ requirement N of the MVP.
 
 ---
 
-## Milestone 1 — v0.1 MVP  ·  all 11 requirements
+## Milestone 1 — v0.1 MVP  ·  all 11 requirements  ·  *in progress*
 
 Target: first end-to-end sync to the author's FiiO M21 works, reliably,
 on Linux + macOS + Windows.
@@ -49,12 +49,16 @@ on Linux + macOS + Windows.
 
 - [x] `scan::removable::enumerate()` via `sysinfo` (cross-platform).
 - [x] `scan::heuristic::identify()`: exact label, partial label, marker
-      files (`.database_uuid`), generic fallback.
+      files (`.database_uuid`, `HiByMusic/`), exFAT/FAT32 fallback.
 - [x] `scan::resolve_destination()` for `auto:<dap-id>` in sync profiles.
-- [x] `dapctl scan` human table + `--json` output.
+- [x] `dapctl scan` human table + `--json` output + MTP guidance message.
+- [x] Windows: `GetVolumeInformationW` for correct volume label.
+- [x] Heuristic covers FiiO M11 family, Shanling, iBasso, Cayin, HiBy.
 - [ ] Linux: enhance with `lsblk --json` for more reliable label detection.
 - [ ] macOS: `diskutil info -plist` for stricter removable detection.
-- [ ] Windows: cross-check with `GetVolumeInformationW` for label.
+
+**Note:** MTP connections are not supported by design. The primary
+workflow is microSD extraction + card reader. See README for rationale.
 
 ### Diff  (req 4, 6)
 
