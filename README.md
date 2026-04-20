@@ -29,9 +29,11 @@ This is the workflow most audiophiles already use for large library
 syncs. It is faster (~40–80 MB/s) and more reliable than any
 USB-connected transfer mode.
 
-> **MTP is not supported.** Android-based DAPs connected via USB appear
-> as `This PC\Device Name\...` in Windows Explorer — these are not
-> mounted drives and dapctl cannot access them. Extract the microSD.
+> **MTP is not supported natively.** Android-based DAPs connected via
+> USB appear as `This PC\Device Name\...` — not mounted drives.
+> You can work around this by pre-mounting with `jmtpfs` (Linux/macOS)
+> or `rclone` + WinFsp (Windows). See [`docs/MTP_WORKFLOW.md`](docs/MTP_WORKFLOW.md).
+> For large syncs, extracting the microSD is faster and safer.
 
 ## Why it exists
 
