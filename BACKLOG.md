@@ -47,11 +47,14 @@ on Linux + macOS + Windows.
 
 ### Scan  (req 2)
 
-- [ ] Linux: `/proc/mounts` + `lsblk --json` for label + fs + sizes.
-- [ ] macOS: `diskutil info -plist` (stopgap), migrate to IOKit.
-- [ ] Windows: `GetLogicalDrives` + `GetVolumeInformationW`.
-- [ ] `scan::heuristic::identify` covering FiiO M21 ground truth.
-- [ ] `dapctl scan --json` output.
+- [x] `scan::removable::enumerate()` via `sysinfo` (cross-platform).
+- [x] `scan::heuristic::identify()`: exact label, partial label, marker
+      files (`.database_uuid`), generic fallback.
+- [x] `scan::resolve_destination()` for `auto:<dap-id>` in sync profiles.
+- [x] `dapctl scan` human table + `--json` output.
+- [ ] Linux: enhance with `lsblk --json` for more reliable label detection.
+- [ ] macOS: `diskutil info -plist` for stricter removable detection.
+- [ ] Windows: cross-check with `GetVolumeInformationW` for label.
 
 ### Diff  (req 4, 6)
 
