@@ -31,18 +31,19 @@ on Linux + macOS + Windows.
 
 ### Foundations
 
-- [ ] `logging::init`: dual sink (human + JSONL), `run_id` propagation,
+- [x] `logging::init`: dual sink (human + JSONL), `run_id` propagation,
       schema v1 frozen. (req 8)
-- [ ] `cli`: flesh out `--yes`, `--dry-run`, `--profile`, `--log-file`,
-      exit code convention. (req 10, 11)
+- [ ] `cli`: flesh out `--yes`, `--dry-run`, exit code convention. (req 10)
 - [ ] Error taxonomy (`thiserror`) with user-facing messages vs internal.
 
 ### Config & DAP catalogue  (req 1, 3, 6)
 
-- [ ] `config::load(path)` with schema validation, helpful error spans.
-- [ ] `dap::load(id)` — builtin first, then `$XDG_CONFIG_HOME/dapctl/
-      profiles/<id>.toml` override; `deny_unknown_fields`.
-- [ ] Merge exclusions: DAP profile + sync profile filters.
+- [x] `config::load(path)` with schema validation, helpful error spans.
+- [x] `dap::load(id)` — builtin first, then XDG override; `deny_unknown_fields`.
+- [x] Merge exclusions: `ResolvedProfile` + `build_exclude_set` / `build_include_set`.
+- [x] `dapctl profile list` — DAP profiles + sync profiles.
+- [x] `dapctl profile show <id>` — DAP profile details.
+- [x] `dapctl profile check <path>` — validate sync profile + resolve DAP.
 
 ### Scan  (req 2)
 
