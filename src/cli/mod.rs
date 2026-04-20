@@ -1,6 +1,7 @@
-//! Command-line entry point and subcommand dispatch.
+use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
+use ulid::Ulid;
 
 pub mod diff;
 pub mod log;
@@ -19,9 +20,13 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
 
-    /// Write logs to this file in addition to stderr.
+    /// Write human-readable log to this file in addition to stderr.
     #[arg(long, global = true, value_name = "PATH")]
-    log_file: Option<String>,
+    log_file: Option<PathBuf>,
+
+    /// Increase verbosity (default: INFO).
+    #[arg(short, long, global = true, action = clap::ArgAction::Count)]
+    verbose: u8,
 
     /// Assume yes to all prompts (required for destructive ops without a TTY).
     #[arg(short = 'y', long, global = true)]
@@ -42,15 +47,35 @@ enum Command {
     Log(log::Args),
 }
 
-/// Parse argv and dispatch. When no subcommand is given, launch the TUI.
+/// Parse argv, initialise logging, and dispatch.
+/// When no subcommand is given, launch the TUI.
 pub fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    match cli.command {
+
+    let verbosity = match cli.verbose {
+        0 => tracing::Level::INFO,
+        1 => tracing::Level::DEBUG,
+        _ => tracing::Level::TRACE,
+    };
+
+    let run_id = Ulid::new();
+    let jsonl_dir = crate::logging::default_jsonl_dir()?;
+    crate::logging::init(crate::logging::InitOpts {
+        run_id,
+        human_log_file: cli.log_file,
+        jsonl_dir,
+        verbosity,
+    })?;
+
+    let result = match cli.command {
         None => crate::tui::run(),
         Some(Command::Sync(a)) => sync::run(a),
         Some(Command::Diff(a)) => diff::run(a),
         Some(Command::Scan(a)) => scan::run(a),
         Some(Command::Profile(a)) => profile::run(a),
         Some(Command::Log(a)) => log::run(a),
-    }
+    };
+
+    crate::logging::finish(result.is_ok());
+    result
 }
