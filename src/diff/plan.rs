@@ -1,17 +1,16 @@
 use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
 
-/// Classification of a single file after comparing source and destination.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum EntryKind {
-    /// Present in source, absent in destination. Will be copied.
+    /// Present in source, absent in destination → will be copied.
     New,
-    /// Present in both, but source is newer/different. Will be overwritten.
+    /// Present in both, but different → will be overwritten.
     Modified,
-    /// Present in destination, absent in source. Deleted in `mirror` mode.
+    /// Present in destination only → deleted in mirror mode.
     Orphan,
-    /// Present in both, identical. No action.
+    /// Identical → no action.
     Same,
 }
 
@@ -28,11 +27,28 @@ pub struct Plan {
 }
 
 impl Plan {
+    pub fn count(&self, kind: EntryKind) -> usize {
+        self.entries.iter().filter(|e| e.kind == kind).count()
+    }
+
     pub fn total_bytes(&self, kind: EntryKind) -> u64 {
         self.entries
             .iter()
             .filter(|e| e.kind == kind)
             .map(|e| e.size_bytes)
             .sum()
+    }
+
+    /// Bytes that will need to be written to the destination.
+    pub fn transfer_bytes(&self) -> u64 {
+        self.total_bytes(EntryKind::New) + self.total_bytes(EntryKind::Modified)
+    }
+
+    /// Rough ETA in seconds assuming `speed_bps` bytes per second.
+    pub fn eta_secs(&self, speed_bps: u64) -> u64 {
+        if speed_bps == 0 {
+            return 0;
+        }
+        self.transfer_bytes() / speed_bps
     }
 }

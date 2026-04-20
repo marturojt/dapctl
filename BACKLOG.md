@@ -58,10 +58,14 @@ on Linux + macOS + Windows.
 
 ### Diff  (req 4, 6)
 
-- [ ] Parallel walk with `walkdir` + `rayon`, applying globset filters.
-- [ ] `Verify::SizeMtime` comparator.
-- [ ] `Verify::Checksum` with `blake3`, cached per mtime/size tuple.
-- [ ] `Plan` serialisable to JSON (for TUI handoff and tests).
+- [x] `diff::walker::walk()` with globset exclude+include filtering,
+      `/`-normalized paths for cross-platform glob matching.
+- [x] `diff::compare::compare()` merge-join, Verify::SizeMtime with
+      2 s FAT32 mtime tolerance.
+- [x] `Plan` serialisable to JSON; `transfer_bytes()`, `eta_secs()`.
+- [x] `diff::diff()` high-level entry point used by CLI and TUI.
+- [x] `dapctl diff <profile>` human summary + entry list + `--json`.
+- [ ] `Verify::Checksum` with `blake3` (v0.2).
 - [ ] Filesystem-aware path checks: warn on names exceeding DAP limits.
 
 ### Transfer  (req 5, 7, 9)
