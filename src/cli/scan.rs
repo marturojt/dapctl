@@ -28,6 +28,10 @@ pub fn run(args: Args) -> anyhow::Result<()> {
 
     if result.identified.is_empty() && result.unidentified.is_empty() {
         println!("  (no removable drives detected)");
+        println!();
+        println!("  Tip: dapctl works with the microSD card extracted from the DAP");
+        println!("  and inserted into a card reader (shows as a drive letter).");
+        println!("  MTP connections (\"Este equipo\\Device\\...\") are not supported.");
         return Ok(());
     }
 
