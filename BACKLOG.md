@@ -19,8 +19,8 @@ requirement N of the MVP.
 - [x] GPLv3 license file
 - [x] README, CHANGELOG, BACKLOG, architecture doc, DAP profile spec
 - [x] CI workflow (fmt · clippy · test · audit)
-- [ ] Verify `cargo check` clean on maintainer machine
-- [ ] Confirm `dapctl` namespace across GitHub org / crates.io / AUR / domains
+- [x] Verify `cargo check` clean on maintainer machine (rustc 1.95.0, 2026-04-19)
+- [ ] Confirm `dapctl` namespace — dapctl.com acquired; pending: crates.io, AUR
 
 ---
 
