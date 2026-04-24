@@ -28,9 +28,15 @@ prefers_artist_album_tree = true
 
 [exclude]
 globs = [
+  # OS / filesystem artifacts
   "System Volume Information/**",
   "$RECYCLE.BIN/**",
   ".Trash-*/**",
   ".DS_Store",
   "._*",
+  # Common Android DAP firmware artifacts (HiBy, FiiO, etc.)
+  ".thumbnails/**",
+  ".database_uuid",
+  ".nomedia",
+  "*.db-journal",
 ]

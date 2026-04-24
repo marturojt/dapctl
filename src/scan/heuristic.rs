@@ -72,6 +72,10 @@ pub fn identify(mount: &Mount) -> Option<IdentifiedDap> {
     if root.join("HiByMusic").exists() {
         return Some(hit(mount, "hiby-r6", Confidence::Heuristic));
     }
+    // .thumbnails/ at SD root is a common Android DAP artifact (HiBy, FiiO, etc.)
+    if root.join(".thumbnails").exists() {
+        return Some(hit(mount, "generic", Confidence::Heuristic));
+    }
 
     // ── Generic fallback ─────────────────────────────────────────────────
     // Any exFAT/FAT32 removable with a Music folder is likely a DAP microSD.
