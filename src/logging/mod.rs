@@ -1,12 +1,19 @@
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
 use ulid::Ulid;
 
 pub const JSONL_SCHEMA_VERSION: u32 = 1;
+
+static RUN_ID: OnceLock<String> = OnceLock::new();
+
+/// Return the run_id string set during `init()`, or a placeholder.
+pub fn current_run_id() -> String {
+    RUN_ID.get().cloned().unwrap_or_else(|| "unknown".to_owned())
+}
 
 pub struct InitOpts {
     pub run_id: Ulid,
@@ -66,6 +73,8 @@ pub fn init(opts: InitOpts) -> anyhow::Result<()> {
         .with(file_layer)
         .try_init()
         .map_err(|e| anyhow::anyhow!("tracing already initialised: {e}"))?;
+
+    let _ = RUN_ID.set(opts.run_id.to_string());
 
     tracing::info!(
         event = "start",

@@ -5,6 +5,8 @@ pub mod executor;
 pub mod manifest;
 pub mod verify;
 
+pub use executor::{Options, Stats, SyncMode, execute};
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

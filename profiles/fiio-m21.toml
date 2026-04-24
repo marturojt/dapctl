@@ -40,6 +40,8 @@ globs = [
   ".Trash-*/**",
   ".DS_Store",
   "._*",
+  # dapctl in-progress transfer markers
+  "**/*.dapctl-tmp",
 ]
 
 [quirks]

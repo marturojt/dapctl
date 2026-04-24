@@ -39,4 +39,6 @@ globs = [
   ".database_uuid",
   ".nomedia",
   "*.db-journal",
+  # dapctl in-progress transfer markers
+  "**/*.dapctl-tmp",
 ]

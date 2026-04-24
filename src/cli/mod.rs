@@ -69,7 +69,7 @@ pub fn run() -> anyhow::Result<()> {
 
     let result = match cli.command {
         None => crate::tui::run(),
-        Some(Command::Sync(a)) => sync::run(a),
+        Some(Command::Sync(a)) => sync::run(a, cli.yes),
         Some(Command::Diff(a)) => diff::run(a),
         Some(Command::Scan(a)) => scan::run(a),
         Some(Command::Profile(a)) => profile::run(a),
