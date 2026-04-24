@@ -33,7 +33,7 @@ on Linux + macOS + Windows.
 
 - [x] `logging::init`: dual sink (human + JSONL), `run_id` propagation,
       schema v1 frozen. (req 8)
-- [ ] `cli`: flesh out `--yes`, `--dry-run`, exit code convention. (req 10)
+- [x] `cli`: `--yes`, `--dry-run`, exit code convention. (req 10)
 - [ ] Error taxonomy (`thiserror`) with user-facing messages vs internal.
 
 ### Config & DAP catalogue  (req 1, 3, 6)
@@ -74,13 +74,16 @@ workflow is microSD extraction + card reader. See README for rationale.
 
 ### Transfer  (req 5, 7, 9)
 
-- [ ] `additive` mode: copy new + modified, never delete.
-- [ ] `mirror` mode: dry-run mandatory in absence of `--yes`.
+- [x] `additive` mode: copy new + modified, never delete.
+- [x] `mirror` mode: dry-run mandatory in absence of `--yes`.
+- [x] Executor with temp + fsync + rename; FAT32 caveat documented.
+- [x] Manifest JSONL per run at `%APPDATA%/dapctl/runs/<ulid>.jsonl`.
+- [x] `indicatif` MultiProgress bars (overall + per-file, speed, ETA).
+- [x] `dapctl sync <profile>` CLI with `--yes` / `--dry-run`, result summary.
 - [ ] `selective` mode: read `[selective]` from sync profile TOML,
       TUI writes back via `toml_edit` preserving comments.
-- [ ] Executor with temp + fsync + rename; FAT32 caveat documented.
-- [ ] Manifest JSONL per run; resume re-queues non-`Done` entries.
-- [ ] `indicatif` progress bars for non-TUI runs.
+- [ ] Manifest resume: on re-run, skip `Done` entries (currently re-diffs
+      cleanly via temp file exclusion — full resume is a v0.2 refinement).
 
 ### TUI  (req 4, 5)
 
@@ -116,12 +119,63 @@ workflow is microSD extraction + card reader. See README for rationale.
 - [ ] Tag reading (`lofty`) for filters: artist / genre / bitdepth / SR.
 - [ ] Post-copy checksum verification toggle.
 
-## Milestone 3 — v1.0 Community profiles & SSH
+## Milestone 3 — v0.3 TUI player + audit + cover fetch
+
+**Philosophical scope expansion** — approved 2026-04-24. See plan §12
+for detailed architecture, crate choices, and sub-milestones.
+
+### 12-a · Player core  (est. 4–6 weeks)
+
+- [ ] `player::engine` — rodio::Sink management, mpsc channels for
+      `PlayerCommand` / `PlayerEvent`.
+- [ ] `player::decoder` — symphonia for PCM (FLAC/MP3/ALAC/AAC/OGG/WAV),
+      ffmpeg pipe router for DSD (same detection as v0.2 transcoding).
+- [ ] `player::queue` — playlist, queue, shuffle/repeat.
+- [ ] `tui::views::player` — 5th Ratatui view: Now Playing + Queue list
+      + progress bar. Toggle `L`/`D` switches between source library
+      and mounted destination.
+- [ ] Add `rodio` + `symphonia` to Cargo.toml.
+
+### 12-b · Player DSD + diff integration  (est. 2 weeks)
+
+- [ ] DSD via ffmpeg pipe → PCM 24/176.4 → rodio. ⚠ icon when ffmpeg
+      missing.
+- [ ] `space` keybind in diff view → push to player queue → open player
+      view. Pre-sync audio verification flow.
+- [ ] Hi-res passthrough best-effort; document WASAPI exclusive as v1.0.
+
+### 12-c · Audit  (est. 2 weeks)
+
+- [ ] `audit::scanner` — walk library with `lofty`, group by album folder.
+- [ ] Detect: missing tags (artist/album/title/track#/year), no cover
+      (embedded or folder.jpg), format mix, track number gaps.
+- [ ] `audit::report` — serialisable report struct.
+- [ ] `dapctl audit <path>` — human table + `--json`. Read-only, offline.
+
+### 12-d · Cover fetch  (est. 3 weeks)
+
+- [ ] `cover::musicbrainz` — search by (artist, album) → MBID →
+      Cover Art Archive fetch. Rate: 1 req/s.
+- [ ] `cover::itunes` — iTunes Search API fallback (no key required).
+      Rate: 20 req/min.
+- [ ] Metadata cache at `$XDG_CACHE_HOME/dapctl/metadata/`, TTL 30 days.
+- [ ] Download to `<album>/folder.jpg`. Resize to ≥600×600 JPEG.
+      No tag embedding in v0.3.
+- [ ] `dapctl cover fetch <path> [--online]` — fails with clear message
+      without `--online`.
+- [ ] `docs/NETWORK.md` — policy, user-agent, rate limits, opt-in.
+- [ ] README "What dapctl is not" section updated to reflect v0.3 scope.
+- [ ] Add `lofty`, `reqwest` (blocking), `image` to Cargo.toml.
+
+---
+
+## Milestone 4 — v1.0 Community profiles & SSH
 
 - [ ] SSH source via `russh`.
 - [ ] At least 6 DAP profiles with fixtures in CI.
 - [ ] AcoustID duplicate detection (optional, `chromaprint`).
 - [ ] Beets query integration as filter source.
+- [ ] Cover art embed in tags (lofty write, all formats, v1.0).
 - [ ] Official distribution: Homebrew core, Scoop, AUR, GH Releases.
 
 ---
@@ -131,5 +185,6 @@ workflow is microSD extraction + card reader. See README for rationale.
 - Bidirectional sync (Syncthing territory).
 - GUI of any kind.
 - Cloud music service integration.
-- Library tagging / organisation (Picard, beets).
+- Full tag editor (that's Picard or beets — dapctl audits, not edits).
+- Scrobbling / smart playlists / EQ (player is audit, not library mgr).
 - Non-audio file types.
