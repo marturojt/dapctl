@@ -32,5 +32,28 @@ Versioning: [SemVer](https://semver.org/).
   `eta_secs()`. Fully serialisable.
 - `dapctl diff <profile>`: summary table with ETA + first 40 entries.
   `--json` emits full Plan.
+- `transfer::executor`: temp + fsync + rename copy pipeline; `indicatif`
+  MultiProgress bars (overall + per-file, speed, ETA).
+- `transfer::manifest`: append-only JSONL per run at
+  `%APPDATA%/dapctl/runs/<ulid>.jsonl`.
+- `transfer::verify`: size+mtime (2 s FAT32 tolerance) and blake3
+  checksum modes.
+- `dapctl sync <profile>`: additive and mirror modes, `--yes` /
+  `--dry-run`, result summary, exit code 0/1.
+
+### Fixed
+- `transfer::executor`: preserve source mtime on destination after
+  rename so `diff` correctly classifies files as `Same` on re-runs and
+  the post-copy `size_mtime` verify passes. Without this, every re-run
+  re-transferred the entire library.
+- `cli::sync`: run a `repair_dest_mtimes` pass before `diff` to fix
+  existing destinations that were populated before the mtime-preservation
+  fix (metadata-only, takes seconds regardless of library size).
+
+### Validated
+- End-to-end sync against HiBy R4 microSD (F:\\, exFAT, 116 GB):
+  2,108 FLAC files, 75.1 GB transferred and verified.
+- Mirror mode: orphan detection and deletion confirmed.
+- Re-run idempotency: 2,108 unchanged, 0 copied, 0 failed.
 
 [Unreleased]: https://github.com/marturojt/dapctl/compare/HEAD...HEAD

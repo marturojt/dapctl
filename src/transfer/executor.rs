@@ -138,6 +138,9 @@ pub fn execute(
                 std::fs::rename(&tmp, &dst)
                     .with_context(|| format!("cannot rename tmp → {dst}"))?;
 
+                // Preserve source mtime so verify passes and re-runs see Same.
+                preserve_mtime(&src, &dst);
+
                 let verified = match opts.verify {
                     Verify::None => true,
                     Verify::SizeMtime => {
@@ -246,6 +249,63 @@ fn copy_with_progress(
     file.sync_data()?;
 
     Ok(total)
+}
+
+/// Walk `src_root` + `dst_root` and for every file that exists in both with
+/// matching size, set the destination mtime to match the source.
+/// This is a one-time repair for destinations populated without mtime
+/// preservation. Returns the number of files fixed.
+pub fn repair_dest_mtimes(src_root: &Utf8Path, dst_root: &Utf8Path) -> usize {
+    use std::fs::FileTimes;
+    use walkdir::WalkDir;
+
+    let mut count = 0usize;
+
+    for entry in WalkDir::new(src_root.as_std_path())
+        .follow_links(false)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+    {
+        let src_path = entry.path();
+        let Ok(rel) = src_path.strip_prefix(src_root.as_std_path()) else { continue };
+        let dst_path = dst_root.as_std_path().join(rel);
+
+        let Ok(src_meta) = std::fs::metadata(src_path) else { continue };
+        let Ok(dst_meta) = std::fs::metadata(&dst_path) else { continue };
+
+        if src_meta.len() != dst_meta.len() {
+            continue;
+        }
+
+        let Ok(src_mtime) = src_meta.modified() else { continue };
+        let Ok(dst_mtime) = dst_meta.modified() else { continue };
+
+        let to_ns = |t: std::time::SystemTime| -> i128 {
+            t.duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos() as i128)
+                .unwrap_or(0)
+        };
+
+        if (to_ns(src_mtime) - to_ns(dst_mtime)).abs() <= 2_000_000_000 {
+            continue; // already within FAT tolerance
+        }
+
+        let Ok(f) = std::fs::OpenOptions::new().write(true).open(&dst_path) else { continue };
+        if f.set_times(FileTimes::new().set_modified(src_mtime)).is_ok() {
+            count += 1;
+        }
+    }
+
+    count
+}
+
+fn preserve_mtime(src: &Utf8Path, dst: &Utf8Path) {
+    use std::fs::FileTimes;
+    let Ok(meta) = std::fs::metadata(src.as_std_path()) else { return };
+    let Ok(mtime) = meta.modified() else { return };
+    let Ok(f) = std::fs::OpenOptions::new().write(true).open(dst.as_std_path()) else { return };
+    let _ = f.set_times(FileTimes::new().set_modified(mtime));
 }
 
 fn tmp_path(dst: &Utf8Path) -> Utf8PathBuf {

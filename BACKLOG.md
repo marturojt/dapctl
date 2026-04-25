@@ -80,6 +80,9 @@ workflow is microSD extraction + card reader. See README for rationale.
 - [x] Manifest JSONL per run at `%APPDATA%/dapctl/runs/<ulid>.jsonl`.
 - [x] `indicatif` MultiProgress bars (overall + per-file, speed, ETA).
 - [x] `dapctl sync <profile>` CLI with `--yes` / `--dry-run`, result summary.
+- [x] Source mtime preserved on destination after rename (re-run idempotency).
+- [x] `repair_dest_mtimes` pre-flight: fixes existing destinations in seconds.
+- [x] Validated: 2,108 FLAC · 75 GB · HiBy R4 microSD · mirror + additive.
 - [ ] `selective` mode: read `[selective]` from sync profile TOML,
       TUI writes back via `toml_edit` preserving comments.
 - [ ] Manifest resume: on re-run, skip `Done` entries (currently re-diffs

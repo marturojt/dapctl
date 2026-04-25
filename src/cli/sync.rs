@@ -47,6 +47,12 @@ pub fn run(args: Args, yes: bool) -> anyhow::Result<()> {
         dry_run,
     );
 
+    // Repair destination mtimes for files copied without mtime preservation.
+    let repaired = crate::transfer::repair_dest_mtimes(&source, &destination);
+    if repaired > 0 {
+        eprintln!("  repaired mtimes for {repaired} file(s)");
+    }
+
     // ── Diff ──────────────────────────────────────────────────────────────
     let result = crate::diff::diff(&resolved, &source, &destination)?;
     let plan = &result.plan;
