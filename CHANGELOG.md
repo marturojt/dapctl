@@ -40,6 +40,20 @@ Versioning: [SemVer](https://semver.org/).
   checksum modes.
 - `dapctl sync <profile>`: additive and mirror modes, `--yes` /
   `--dry-run`, result summary, exit code 0/1.
+- TUI diff view: summary table (counts + bytes + ETA per kind), entry
+  list with `tab`-cycled filter (All / New / Modified / Orphan / Same),
+  j/k scroll, color-coded entry icons.
+- TUI sync from diff view: `y` confirms and launches sync; mirror mode
+  with orphans requires a second `y` with a flash warning.
+- `transfer::ProgressEvent` channel: executor optionally sends
+  `FileStart / FileProgress / FileDone / FileFail / DeleteDone / Finish`
+  to a `mpsc::Sender` so the TUI can consume them without indicatif
+  terminal output.
+- TUI progress view: overall `Gauge` (done/total bytes + %), per-file
+  `Gauge` with filename in title, live speed / ETA / copied / deleted /
+  failed stats, auto-scrolling recent-events tail (last 200), completion
+  banner. Sync executes in a background thread; main thread drains the
+  channel each frame.
 
 ### Fixed
 - `transfer::executor`: preserve source mtime on destination after

@@ -1,4 +1,5 @@
 use std::io::{BufReader, BufWriter, Read, Write};
+use std::sync::mpsc::Sender;
 use std::time::Instant;
 
 use anyhow::Context;
@@ -8,6 +9,7 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use crate::config::Verify;
 use crate::diff::{EntryKind, Plan};
 use crate::transfer::manifest::{Manifest, ManifestEntry, State};
+use crate::transfer::ProgressEvent;
 
 /// Read+write buffer: 1 MiB gives ~80 progress-bar updates for an 86 MB FLAC.
 const BUF: usize = 1024 * 1024;
@@ -26,9 +28,11 @@ pub struct Options {
     pub verify: Verify,
     pub run_id: String,
     pub manifest_dir: Utf8PathBuf,
+    /// When set, progress events are sent here and indicatif bars are hidden.
+    pub progress_tx: Option<Sender<ProgressEvent>>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Stats {
     pub copied: usize,
     pub deleted: usize,
@@ -77,31 +81,43 @@ pub fn execute(
         .collect();
     let mut manifest = Manifest::create(
         &opts.run_id,
-        "", // profile name not threaded here; manifest is for auditing
+        "",
         &opts.manifest_dir,
         &manifest_entries,
     )?;
 
-    // ── Progress bars ──────────────────────────────────────────────────────
-    let mp = MultiProgress::new();
+    // ── Progress bars (hidden when TUI consumes events via channel) ────────
+    let tui_mode = opts.progress_tx.is_some();
+    let _mp: Option<MultiProgress>;
+    let overall: ProgressBar;
+    let file_bar: ProgressBar;
 
-    let overall = mp.add(ProgressBar::new(transfer_bytes));
-    overall.set_style(
-        ProgressStyle::with_template(
-            "  Overall  {wide_bar:.cyan/blue}  {percent:>3}%  {bytes}/{total_bytes}  {binary_bytes_per_sec}  ETA {eta}",
-        )
-        .unwrap()
-        .progress_chars("█▉▊▋▌▍▎▏ "),
-    );
-
-    let file_bar = mp.add(ProgressBar::new(0));
-    file_bar.set_style(
-        ProgressStyle::with_template(
-            "  Current  {wide_bar:.green/white}  {percent:>3}%  {bytes}/{total_bytes}\n           {msg}",
-        )
-        .unwrap()
-        .progress_chars("█▉▊▋▌▍▎▏ "),
-    );
+    if tui_mode {
+        overall = ProgressBar::hidden();
+        file_bar = ProgressBar::hidden();
+        _mp = None;
+    } else {
+        let mp = MultiProgress::new();
+        let o = mp.add(ProgressBar::new(transfer_bytes));
+        o.set_style(
+            ProgressStyle::with_template(
+                "  Overall  {wide_bar:.cyan/blue}  {percent:>3}%  {bytes}/{total_bytes}  {binary_bytes_per_sec}  ETA {eta}",
+            )
+            .unwrap()
+            .progress_chars("█▉▊▋▌▍▎▏ "),
+        );
+        let f = mp.add(ProgressBar::new(0));
+        f.set_style(
+            ProgressStyle::with_template(
+                "  Current  {wide_bar:.green/white}  {percent:>3}%  {bytes}/{total_bytes}\n           {msg}",
+            )
+            .unwrap()
+            .progress_chars("█▉▊▋▌▍▎▏ "),
+        );
+        overall = o;
+        file_bar = f;
+        _mp = Some(mp);
+    }
 
     let mut stats = Stats::default();
 
@@ -129,7 +145,14 @@ pub fn execute(
 
         tracing::debug!(event = "xfer_start", path = %entry.path, bytes = entry.size_bytes);
 
-        match copy_with_progress(&src, &tmp, &file_bar, &overall) {
+        if let Some(ref tx) = opts.progress_tx {
+            let _ = tx.send(ProgressEvent::FileStart {
+                path: entry.path.to_string(),
+                bytes: entry.size_bytes,
+            });
+        }
+
+        match copy_with_progress(&src, &tmp, &file_bar, &overall, opts.progress_tx.as_ref()) {
             Ok(written) => {
                 if dst.exists() {
                     std::fs::remove_file(&dst)
@@ -138,7 +161,6 @@ pub fn execute(
                 std::fs::rename(&tmp, &dst)
                     .with_context(|| format!("cannot rename tmp → {dst}"))?;
 
-                // Preserve source mtime so verify passes and re-runs see Same.
                 preserve_mtime(&src, &dst);
 
                 let verified = match opts.verify {
@@ -161,6 +183,12 @@ pub fn execute(
                         state: State::Done,
                         err: None,
                     });
+                    if let Some(ref tx) = opts.progress_tx {
+                        let _ = tx.send(ProgressEvent::FileDone {
+                            path: entry.path.to_string(),
+                            bytes: written,
+                        });
+                    }
                 } else {
                     stats.failed += 1;
                     tracing::warn!(event = "verify_fail", path = %entry.path);
@@ -170,6 +198,12 @@ pub fn execute(
                         state: State::Failed,
                         err: Some("verify mismatch".to_owned()),
                     });
+                    if let Some(ref tx) = opts.progress_tx {
+                        let _ = tx.send(ProgressEvent::FileFail {
+                            path: entry.path.to_string(),
+                            err: "verify mismatch".to_owned(),
+                        });
+                    }
                 }
             }
             Err(e) => {
@@ -181,8 +215,14 @@ pub fn execute(
                     path: entry.path.clone(),
                     size_bytes: entry.size_bytes,
                     state: State::Failed,
-                    err: Some(msg),
+                    err: Some(msg.clone()),
                 });
+                if let Some(ref tx) = opts.progress_tx {
+                    let _ = tx.send(ProgressEvent::FileFail {
+                        path: entry.path.to_string(),
+                        err: msg,
+                    });
+                }
             }
         }
     }
@@ -199,15 +239,31 @@ pub fn execute(
             Ok(()) => {
                 stats.deleted += 1;
                 tracing::info!(event = "delete", path = %entry.path);
+                if let Some(ref tx) = opts.progress_tx {
+                    let _ = tx.send(ProgressEvent::DeleteDone {
+                        path: entry.path.to_string(),
+                    });
+                }
             }
             Err(e) => {
                 stats.failed += 1;
                 tracing::error!(event = "delete_fail", path = %entry.path, err = %e);
+                if let Some(ref tx) = opts.progress_tx {
+                    let _ = tx.send(ProgressEvent::FileFail {
+                        path: entry.path.to_string(),
+                        err: e.to_string(),
+                    });
+                }
             }
         }
     }
 
     stats.elapsed_secs = start.elapsed().as_secs_f64();
+
+    if let Some(ref tx) = opts.progress_tx {
+        let _ = tx.send(ProgressEvent::Finish { stats: stats.clone() });
+    }
+
     Ok(stats)
 }
 
@@ -218,6 +274,7 @@ fn copy_with_progress(
     dst: &Utf8Path,
     file_bar: &ProgressBar,
     overall: &ProgressBar,
+    progress_tx: Option<&Sender<ProgressEvent>>,
 ) -> anyhow::Result<u64> {
     let src_file = std::fs::File::open(src.as_std_path())
         .with_context(|| format!("cannot open {src}"))?;
@@ -242,9 +299,11 @@ fn copy_with_progress(
         total += n as u64;
         file_bar.inc(n as u64);
         overall.inc(n as u64);
+        if let Some(tx) = progress_tx {
+            let _ = tx.send(ProgressEvent::FileProgress { bytes: n as u64 });
+        }
     }
 
-    // Flush and fsync before the rename so the data is durable.
     let file = writer.into_inner().context("flush error")?;
     file.sync_data()?;
 
@@ -253,8 +312,6 @@ fn copy_with_progress(
 
 /// Walk `src_root` + `dst_root` and for every file that exists in both with
 /// matching size, set the destination mtime to match the source.
-/// This is a one-time repair for destinations populated without mtime
-/// preservation. Returns the number of files fixed.
 pub fn repair_dest_mtimes(src_root: &Utf8Path, dst_root: &Utf8Path) -> usize {
     use std::fs::FileTimes;
     use walkdir::WalkDir;
@@ -288,7 +345,7 @@ pub fn repair_dest_mtimes(src_root: &Utf8Path, dst_root: &Utf8Path) -> usize {
         };
 
         if (to_ns(src_mtime) - to_ns(dst_mtime)).abs() <= 2_000_000_000 {
-            continue; // already within FAT tolerance
+            continue;
         }
 
         let Ok(f) = std::fs::OpenOptions::new().write(true).open(&dst_path) else { continue };
@@ -309,9 +366,7 @@ fn preserve_mtime(src: &Utf8Path, dst: &Utf8Path) {
 }
 
 fn tmp_path(dst: &Utf8Path) -> Utf8PathBuf {
-    let name = dst
-        .file_name()
-        .unwrap_or("file");
+    let name = dst.file_name().unwrap_or("file");
     let tmp_name = format!("{name}.dapctl-tmp");
     dst.parent()
         .map(|p| p.join(&tmp_name))

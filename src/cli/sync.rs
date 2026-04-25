@@ -149,6 +149,7 @@ pub fn run(args: Args, yes: bool) -> anyhow::Result<()> {
         verify: resolved.sync.transfer.verify,
         run_id,
         manifest_dir,
+        progress_tx: None,
     };
 
     let stats = crate::transfer::execute(plan, &source, &destination, &opts)?;

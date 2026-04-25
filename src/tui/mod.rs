@@ -5,6 +5,7 @@ pub mod theme;
 pub mod views;
 
 use std::io::{self, stdout};
+use std::sync::mpsc;
 use std::time::Duration;
 
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
@@ -15,7 +16,7 @@ use crossterm::ExecutableCommand;
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
-use app::{App, DiffState, View};
+use app::{App, DiffState, ProgressState, View};
 
 pub fn run() -> anyhow::Result<()> {
     let mut app = App::new()?;
@@ -30,19 +31,11 @@ pub fn run() -> anyhow::Result<()> {
 
     let result = event_loop(&mut terminal, &mut app);
 
-    // Always restore terminal before anything else.
     let _ = disable_raw_mode();
     let _ = terminal.backend_mut().execute(LeaveAlternateScreen);
     let _ = terminal.show_cursor();
 
-    result?;
-
-    // Run pending sync after TUI exits cleanly.
-    if app.pending_sync {
-        run_sync_from_tui(&app)?;
-    }
-
-    Ok(())
+    result
 }
 
 fn event_loop(
@@ -50,18 +43,19 @@ fn event_loop(
     app: &mut App,
 ) -> anyhow::Result<()> {
     loop {
+        // Drain progress events before drawing so we always render fresh state.
+        app.drain_progress();
+
         terminal.draw(|f| draw(f, app))?;
 
-        // Run any pending diff computation immediately after its loading frame.
+        // Trigger diff computation the frame after its "Computing…" screen.
         if matches!(app.diff_state, DiffState::Loading) {
             compute_diff(app);
-            if app.should_quit {
-                break;
-            }
+            if app.should_quit { break; }
             continue;
         }
 
-        if event::poll(Duration::from_millis(200))? {
+        if event::poll(Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
                 handle_key(app, key.code, key.modifiers);
             }
@@ -69,9 +63,7 @@ fn event_loop(
 
         app.tick_flash();
 
-        if app.should_quit {
-            break;
-        }
+        if app.should_quit { break; }
     }
     Ok(())
 }
@@ -80,33 +72,36 @@ fn draw(f: &mut ratatui::Frame, app: &App) {
     match app.view {
         View::Profiles => views::profiles::render(f, app),
         View::Diff => views::diff::render(f, app),
-        View::Progress | View::Log => views::placeholder::render(f, app),
+        View::Progress => views::progress::render(f, app),
+        View::Log => views::placeholder::render(f, app),
     }
 }
 
 fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
     match (code, modifiers) {
-        // Always: ctrl-c quits
         (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
             app.should_quit = true;
         }
 
-        // q: quit from profiles, back to profiles from any other view
         (KeyCode::Char('q'), _) => match app.view {
             View::Profiles => app.should_quit = true,
+            View::Progress => {
+                // Only allow quit once the sync is done.
+                let done = app.progress_state.as_ref().is_some_and(|p| p.finished);
+                if done { app.should_quit = true; }
+            }
             _ => {
                 app.view = View::Profiles;
                 app.confirm_sync = false;
             }
         },
 
-        // esc: always back to profiles
-        (KeyCode::Esc, _) => {
+        (KeyCode::Esc, _) if app.view != View::Progress => {
             app.view = View::Profiles;
             app.confirm_sync = false;
         }
 
-        // ── Profiles view ────────────────────────────────────────────────
+        // ── Profiles ─────────────────────────────────────────────────────
         (KeyCode::Char('j') | KeyCode::Down, _) if app.view == View::Profiles => {
             app.move_down();
         }
@@ -122,7 +117,7 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
             app.refresh_scan();
         }
 
-        // ── Diff view ────────────────────────────────────────────────────
+        // ── Diff ─────────────────────────────────────────────────────────
         (KeyCode::Char('j') | KeyCode::Down, _) if app.view == View::Diff => {
             app.move_diff_down();
         }
@@ -135,8 +130,6 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
         (KeyCode::Char('r'), _) if app.view == View::Diff => {
             app.enter_diff();
         }
-
-        // y: confirm sync — requires second press if mirror+orphans
         (KeyCode::Char('y'), _) if app.view == View::Diff => {
             handle_sync_confirm(app);
         }
@@ -158,7 +151,6 @@ fn handle_sync_confirm(app: &mut App) {
     let orphans = result.plan.count(EntryKind::Orphan);
 
     if is_mirror && orphans > 0 && !app.confirm_sync {
-        // First press: warn and wait for a second y
         app.confirm_sync = true;
         app.set_flash(format!(
             "Mirror mode will DELETE {orphans} orphan(s).  Press y again to confirm."
@@ -166,13 +158,63 @@ fn handle_sync_confirm(app: &mut App) {
         return;
     }
 
-    // Confirmed — exit TUI and run sync
     app.confirm_sync = false;
-    app.pending_sync = true;
-    app.should_quit = true;
+    launch_sync(app);
 }
 
-// ── Diff computation ───────────────────────────────────────────────────────
+fn launch_sync(app: &mut App) {
+    use crate::config::Mode;
+    use crate::transfer::executor::{Options, SyncMode};
+
+    let DiffState::Ready { result, source, destination, profile_name, mode, .. } =
+        &app.diff_state
+    else {
+        return;
+    };
+
+    // Clone everything the thread needs.
+    let plan = result.plan.clone();
+    let source = source.clone();
+    let destination = destination.clone();
+    let profile_name = profile_name.clone();
+    let mode = *mode;
+
+    let Some((_, profile)) = app.profiles.get(app.profile_idx) else { return };
+    let verify = profile.transfer.verify;
+    let total_bytes = plan.transfer_bytes();
+
+    let sync_mode = match mode {
+        Mode::Mirror => SyncMode::Mirror,
+        Mode::Additive | Mode::Selective => SyncMode::Additive,
+    };
+
+    let manifest_dir = match manifest_dir() {
+        Ok(d) => d,
+        Err(e) => { app.set_flash(format!("manifest dir error: {e}")); return; }
+    };
+
+    let run_id = crate::logging::current_run_id();
+
+    let (tx, rx) = mpsc::channel();
+
+    std::thread::spawn(move || {
+        let opts = Options {
+            dry_run: false,
+            mode: sync_mode,
+            verify,
+            run_id,
+            manifest_dir,
+            progress_tx: Some(tx),
+        };
+        let _ = crate::transfer::execute(&plan, &source, &destination, &opts);
+    });
+
+    app.progress_rx = Some(rx);
+    app.progress_state = Some(ProgressState::new(profile_name, total_bytes));
+    app.view = View::Progress;
+}
+
+// ── Diff computation ──────────────────────────────────────────────────────────
 
 fn compute_diff(app: &mut App) {
     let Some((_, profile)) = app.profiles.get(app.profile_idx) else {
@@ -185,8 +227,7 @@ fn compute_diff(app: &mut App) {
         Ok(d) => d,
         Err(e) => {
             app.diff_state = DiffState::Error(format!(
-                "DAP profile '{}': {e}",
-                profile.profile.dap_profile
+                "DAP profile '{}': {e}", profile.profile.dap_profile
             ));
             return;
         }
@@ -224,119 +265,12 @@ fn compute_diff(app: &mut App) {
     }
 }
 
-// ── Sync from TUI (runs after TUI exits) ──────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-fn run_sync_from_tui(app: &App) -> anyhow::Result<()> {
-    use crate::config::Mode;
-    use crate::diff::EntryKind;
-    use crate::scan::fmt_bytes;
-    use crate::transfer::executor::{Options, SyncMode};
-
-    let Some((_, profile)) = app.profiles.get(app.profile_idx) else {
-        return Ok(());
-    };
-    let profile = profile.clone();
-
-    let dap = crate::dap::load(&profile.profile.dap_profile)?;
-    let resolved = crate::config::ResolvedProfile { sync: profile.clone(), dap };
-    let source = camino::Utf8PathBuf::from(&profile.profile.source);
-    let destination = crate::scan::resolve_destination(&profile.profile.destination)?;
-
-    // Header
-    println!();
-    println!("SYNC  {}  →  {}", profile.profile.source, destination);
-    println!(
-        "      profile: {}  mode: {:?}  dap: {}",
-        profile.profile.name,
-        profile.profile.mode,
-        resolved.dap.dap.id,
-    );
-    println!("{}", "─".repeat(62));
-
-    // Repair mtimes for destinations populated before mtime-preservation fix.
-    let repaired = crate::transfer::repair_dest_mtimes(&source, &destination);
-    if repaired > 0 {
-        eprintln!("  repaired mtimes for {repaired} file(s)");
-    }
-
-    // Re-diff (files may have changed since TUI diff was computed).
-    let result = crate::diff::diff(&resolved, &source, &destination)?;
-    let plan = &result.plan;
-
-    let new_b = plan.total_bytes(EntryKind::New);
-    let mod_b = plan.total_bytes(EntryKind::Modified);
-    let orp_b = plan.total_bytes(EntryKind::Orphan);
-    let transfer_total = new_b + mod_b;
-
-    println!(
-        "  [+] {:>6}  new        {}",
-        plan.count(EntryKind::New),
-        fmt_bytes(new_b)
-    );
-    println!(
-        "  [~] {:>6}  modified   {}",
-        plan.count(EntryKind::Modified),
-        fmt_bytes(mod_b)
-    );
-    println!(
-        "  [-] {:>6}  orphans    {}",
-        plan.count(EntryKind::Orphan),
-        fmt_bytes(orp_b)
-    );
-    println!(
-        "  [=] {:>6}  unchanged  {}",
-        plan.count(EntryKind::Same),
-        fmt_bytes(plan.total_bytes(EntryKind::Same))
-    );
-    println!("{}", "─".repeat(62));
-    println!("  transfer: {}", fmt_bytes(transfer_total));
-    println!();
-
-    if transfer_total == 0 && plan.count(EntryKind::Orphan) == 0 {
-        println!("Nothing to sync.");
-        return Ok(());
-    }
-
-    let mode = match profile.profile.mode {
-        Mode::Mirror => SyncMode::Mirror,
-        Mode::Additive | Mode::Selective => SyncMode::Additive,
-    };
-
-    let manifest_dir = {
-        let dirs = directories::ProjectDirs::from("", "", "dapctl")
-            .ok_or_else(|| anyhow::anyhow!("cannot determine data directory"))?;
-        let path = dirs.data_local_dir().join("runs");
-        camino::Utf8PathBuf::from_path_buf(path)
-            .map_err(|p| anyhow::anyhow!("non-UTF-8 data dir: {}", p.display()))?
-    };
-
-    let opts = Options {
-        dry_run: false,
-        mode,
-        verify: resolved.sync.transfer.verify,
-        run_id: crate::logging::current_run_id(),
-        manifest_dir,
-    };
-
-    let stats = crate::transfer::execute(plan, &source, &destination, &opts)?;
-
-    println!();
-    println!(
-        "Sync complete: {} copied, {} deleted, {} failed  ({:.0}s)",
-        stats.copied, stats.deleted, stats.failed, stats.elapsed_secs,
-    );
-
-    tracing::info!(
-        event = "sync_done",
-        copied = stats.copied,
-        deleted = stats.deleted,
-        failed = stats.failed,
-        bytes = stats.bytes_written,
-    );
-
-    if stats.failed > 0 {
-        anyhow::bail!("{} file(s) failed to transfer", stats.failed);
-    }
-
-    Ok(())
+fn manifest_dir() -> anyhow::Result<camino::Utf8PathBuf> {
+    let dirs = directories::ProjectDirs::from("", "", "dapctl")
+        .ok_or_else(|| anyhow::anyhow!("cannot determine data directory"))?;
+    let path = dirs.data_local_dir().join("runs");
+    camino::Utf8PathBuf::from_path_buf(path)
+        .map_err(|p| anyhow::anyhow!("non-UTF-8 data dir: {}", p.display()))
 }

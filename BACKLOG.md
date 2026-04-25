@@ -91,9 +91,13 @@ workflow is microSD extraction + card reader. See README for rationale.
 ### TUI  (req 4, 5)
 
 - [x] Event loop + `crossterm` input handling.
-- [x] View: `profiles` — list profiles + connected DAPs.
-- [ ] View: `diff` — summary, filterable entry list, selective marking.
-- [ ] View: `progress` — total + current + event tail.
+- [x] View: `profiles` — list profiles + connected DAPs, j/k navigation.
+- [x] View: `diff` — summary table, filterable entry list (tab cycles
+      All/New/Modified/Orphan/Same), j/k scroll, `y` to confirm sync,
+      two-press confirmation for mirror mode with orphan deletions.
+- [x] View: `progress` — overall gauge, per-file gauge with filename,
+      speed / ETA / counters, auto-scrolling recent-events tail,
+      completion banner. Sync runs in background thread via `mpsc`.
 - [ ] View: `log` — scroll/filter.
 - [ ] Theme plumbing: respect `NO_COLOR`, load palette from config.
 

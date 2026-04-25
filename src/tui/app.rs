@@ -1,9 +1,14 @@
 //! Top-level app state machine: which view is active, shared state, event loop.
 
+use std::collections::VecDeque;
+use std::sync::mpsc::Receiver;
+use std::time::Instant;
+
 use camino::Utf8PathBuf;
 
 use crate::config::{Mode, SyncProfile};
 use crate::scan::ScanResult;
+use crate::transfer::{ProgressEvent, Stats};
 use crate::tui::theme::Theme;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -14,7 +19,7 @@ pub enum View {
     Log,
 }
 
-/// State of the diff computation for the diff view.
+/// State of the diff computation.
 pub enum DiffState {
     Idle,
     Loading,
@@ -29,7 +34,7 @@ pub enum DiffState {
     Error(String),
 }
 
-/// Which entry kinds to show in the diff entry list.
+/// Which entry kinds to show in the diff list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntryFilter {
     All,
@@ -72,27 +77,135 @@ impl EntryFilter {
     }
 }
 
+// ── Progress view state ───────────────────────────────────────────────────────
+
+const MAX_RECENT: usize = 200;
+
+pub struct ProgressState {
+    pub profile_name: String,
+    pub total_bytes: u64,
+    pub done_bytes: u64,
+    pub current_file: String,
+    pub current_file_bytes: u64,
+    pub current_file_done: u64,
+    pub copied: usize,
+    pub deleted: usize,
+    pub failed: usize,
+    pub recent: VecDeque<RecentLine>,
+    pub finished: bool,
+    pub finish_stats: Option<Stats>,
+    started: Instant,
+}
+
+pub struct RecentLine {
+    pub icon: &'static str,
+    pub path: String,
+    pub ok: bool,
+}
+
+impl ProgressState {
+    pub fn new(profile_name: String, total_bytes: u64) -> Self {
+        Self {
+            profile_name,
+            total_bytes,
+            done_bytes: 0,
+            current_file: String::new(),
+            current_file_bytes: 0,
+            current_file_done: 0,
+            copied: 0,
+            deleted: 0,
+            failed: 0,
+            recent: VecDeque::with_capacity(MAX_RECENT + 1),
+            finished: false,
+            finish_stats: None,
+            started: Instant::now(),
+        }
+    }
+
+    pub fn speed_bps(&self) -> f64 {
+        let secs = self.started.elapsed().as_secs_f64();
+        if secs < 0.5 {
+            0.0
+        } else {
+            self.done_bytes as f64 / secs
+        }
+    }
+
+    pub fn eta_secs(&self) -> u64 {
+        let speed = self.speed_bps();
+        if speed < 1.0 || self.total_bytes == 0 {
+            return 0;
+        }
+        let remaining = self.total_bytes.saturating_sub(self.done_bytes);
+        (remaining as f64 / speed) as u64
+    }
+
+    pub fn handle_event(&mut self, event: ProgressEvent) {
+        match event {
+            ProgressEvent::FileStart { path, bytes } => {
+                self.current_file = path;
+                self.current_file_bytes = bytes;
+                self.current_file_done = 0;
+            }
+            ProgressEvent::FileProgress { bytes } => {
+                self.current_file_done += bytes;
+                self.done_bytes += bytes;
+            }
+            ProgressEvent::FileDone { path, bytes: _ } => {
+                self.copied += 1;
+                self.current_file.clear();
+                self.push_recent(RecentLine { icon: "[+]", path, ok: true });
+            }
+            ProgressEvent::FileFail { path, err } => {
+                self.failed += 1;
+                self.current_file.clear();
+                self.push_recent(RecentLine {
+                    icon: "[!]",
+                    path: format!("{path}  ({err})"),
+                    ok: false,
+                });
+            }
+            ProgressEvent::DeleteDone { path } => {
+                self.deleted += 1;
+                self.push_recent(RecentLine { icon: "[-]", path, ok: true });
+            }
+            ProgressEvent::Finish { stats } => {
+                self.finished = true;
+                self.finish_stats = Some(stats);
+                self.current_file.clear();
+            }
+        }
+    }
+
+    fn push_recent(&mut self, line: RecentLine) {
+        if self.recent.len() >= MAX_RECENT {
+            self.recent.pop_front();
+        }
+        self.recent.push_back(line);
+    }
+}
+
+// ── App ───────────────────────────────────────────────────────────────────────
+
 pub struct App {
     pub view: View,
     pub theme: Theme,
-    /// Loaded sync profiles: (display-name, profile).
     pub profiles: Vec<(String, SyncProfile)>,
     pub scan: ScanResult,
-    /// Selected index in the profiles list.
     pub profile_idx: usize,
     pub should_quit: bool,
-    /// Transient status message shown in the footer.
     pub flash: Option<String>,
     pub flash_ticks: u8,
-    /// Set to true when the user confirms sync from the diff view.
-    pub pending_sync: bool,
-    /// True while waiting for a second `y` confirmation (mirror + orphans).
     pub confirm_sync: bool,
 
-    // ── Diff view state ───────────────────────────────────────────────────
+    // Diff view
     pub diff_state: DiffState,
     pub diff_entry_idx: usize,
     pub diff_entry_filter: EntryFilter,
+
+    // Progress view
+    pub progress_rx: Option<Receiver<ProgressEvent>>,
+    pub progress_state: Option<ProgressState>,
 }
 
 impl App {
@@ -120,11 +233,12 @@ impl App {
             should_quit: false,
             flash: None,
             flash_ticks: 0,
-            pending_sync: false,
             confirm_sync: false,
             diff_state: DiffState::Idle,
             diff_entry_idx: 0,
             diff_entry_filter: EntryFilter::All,
+            progress_rx: None,
+            progress_state: None,
         })
     }
 
@@ -132,7 +246,7 @@ impl App {
         self.profiles.get(self.profile_idx).map(|(_, p)| p)
     }
 
-    // ── Profiles view ─────────────────────────────────────────────────────
+    // ── Profiles ──────────────────────────────────────────────────────────
 
     pub fn move_up(&mut self) {
         if self.profile_idx > 0 {
@@ -153,7 +267,7 @@ impl App {
         }
     }
 
-    // ── Diff view ─────────────────────────────────────────────────────────
+    // ── Diff ──────────────────────────────────────────────────────────────
 
     pub fn enter_diff(&mut self) {
         self.diff_state = DiffState::Loading;
@@ -175,7 +289,22 @@ impl App {
         self.diff_entry_idx = 0;
     }
 
-    // ── Shared helpers ────────────────────────────────────────────────────
+    // ── Progress ──────────────────────────────────────────────────────────
+
+    /// Drain pending progress events from the channel into `progress_state`.
+    pub fn drain_progress(&mut self) {
+        let rx = match self.progress_rx.as_ref() {
+            Some(r) => r,
+            None => return,
+        };
+        while let Ok(event) = rx.try_recv() {
+            if let Some(ref mut ps) = self.progress_state {
+                ps.handle_event(event);
+            }
+        }
+    }
+
+    // ── Shared ────────────────────────────────────────────────────────────
 
     pub fn set_flash(&mut self, msg: impl Into<String>) {
         self.flash = Some(msg.into());
