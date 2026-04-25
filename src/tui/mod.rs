@@ -142,28 +142,25 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
 // ── Diff computation ───────────────────────────────────────────────────────
 
 fn compute_diff(app: &mut App) {
-    let profile_name = app
-        .profiles
-        .get(app.profile_idx)
-        .map(|(_, p)| p.profile.name.clone())
-        .unwrap_or_default();
-
-    if profile_name.is_empty() {
+    let Some((_, profile)) = app.profiles.get(app.profile_idx) else {
         app.diff_state = DiffState::Error("no profile selected".to_owned());
         return;
-    }
+    };
+    let profile = profile.clone();
 
-    let resolved = match crate::config::resolve(&profile_name) {
-        Ok(r) => r,
+    // Load the DAP profile — profile is already parsed, no need to re-read the file.
+    let dap = match crate::dap::load(&profile.profile.dap_profile) {
+        Ok(d) => d,
         Err(e) => {
-            app.diff_state = DiffState::Error(format!("profile: {e}"));
+            app.diff_state = DiffState::Error(format!("DAP profile '{}': {e}", profile.profile.dap_profile));
             return;
         }
     };
+    let resolved = crate::config::ResolvedProfile { sync: profile.clone(), dap };
 
-    let source = camino::Utf8PathBuf::from(&resolved.sync.profile.source);
+    let source = camino::Utf8PathBuf::from(&profile.profile.source);
     let destination =
-        match crate::scan::resolve_destination(&resolved.sync.profile.destination) {
+        match crate::scan::resolve_destination(&profile.profile.destination) {
             Ok(d) => d,
             Err(e) => {
                 app.diff_state = DiffState::Error(format!("destination: {e}"));
@@ -172,8 +169,8 @@ fn compute_diff(app: &mut App) {
         };
 
     let dap_id = resolved.dap.dap.id.clone();
-    let mode = resolved.sync.profile.mode;
-    let pname = resolved.sync.profile.name.clone();
+    let mode = profile.profile.mode;
+    let pname = profile.profile.name.clone();
 
     match crate::diff::diff(&resolved, &source, &destination) {
         Ok(result) => {
