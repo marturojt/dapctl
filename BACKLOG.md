@@ -90,8 +90,8 @@ workflow is microSD extraction + card reader. See README for rationale.
 
 ### TUI  (req 4, 5)
 
-- [ ] Event loop + `crossterm` input handling.
-- [ ] View: `profiles` — list profiles + connected DAPs.
+- [x] Event loop + `crossterm` input handling.
+- [x] View: `profiles` — list profiles + connected DAPs.
 - [ ] View: `diff` — summary, filterable entry list, selective marking.
 - [ ] View: `progress` — total + current + event tail.
 - [ ] View: `log` — scroll/filter.
