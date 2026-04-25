@@ -84,6 +84,10 @@ pub struct App {
     /// Transient status message shown in the footer.
     pub flash: Option<String>,
     pub flash_ticks: u8,
+    /// Set to true when the user confirms sync from the diff view.
+    pub pending_sync: bool,
+    /// True while waiting for a second `y` confirmation (mirror + orphans).
+    pub confirm_sync: bool,
 
     // ── Diff view state ───────────────────────────────────────────────────
     pub diff_state: DiffState,
@@ -116,6 +120,8 @@ impl App {
             should_quit: false,
             flash: None,
             flash_ticks: 0,
+            pending_sync: false,
+            confirm_sync: false,
             diff_state: DiffState::Idle,
             diff_entry_idx: 0,
             diff_entry_filter: EntryFilter::All,
