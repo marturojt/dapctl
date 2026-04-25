@@ -42,21 +42,28 @@ pub fn render(f: &mut Frame, app: &App) {
     let [content_area, footer_area] =
         Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(inner);
 
-    // ── Footer hints ─────────────────────────────────────────────────────
-    let hints = Line::from(vec![
-        kb("j/k", app),
-        Span::raw(" move  "),
-        kb("enter", app),
-        Span::raw(" diff  "),
-        kb("s", app),
-        Span::raw(" sync  "),
-        kb("r", app),
-        Span::raw(" refresh  "),
-        kb("q", app),
-        Span::raw(" quit"),
-    ]);
+    // ── Footer: flash message or key hints ───────────────────────────────
+    let footer_line = if let Some(ref msg) = app.flash {
+        Line::from(Span::styled(
+            format!("  {msg}"),
+            Style::default().fg(theme.warn),
+        ))
+    } else {
+        Line::from(vec![
+            kb("j/k", app),
+            Span::raw(" move  "),
+            kb("enter", app),
+            Span::raw(" diff  "),
+            kb("s", app),
+            Span::raw(" sync  "),
+            kb("r", app),
+            Span::raw(" refresh  "),
+            kb("q", app),
+            Span::raw(" quit"),
+        ])
+    };
     f.render_widget(
-        Paragraph::new(hints).style(Style::default().fg(theme.muted)),
+        Paragraph::new(footer_line).style(Style::default().fg(theme.muted)),
         footer_area,
     );
 

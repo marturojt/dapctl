@@ -65,6 +65,7 @@ pub fn run() -> anyhow::Result<()> {
         human_log_file: cli.log_file,
         jsonl_dir,
         verbosity,
+        tui_mode: cli.command.is_none(),
     })?;
 
     let result = match cli.command {

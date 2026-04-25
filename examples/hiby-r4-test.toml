@@ -5,7 +5,7 @@ name         = "hiby-r4-flac"
 source       = "D:\\SpecialTorrentFolder\\Downloads"
 destination  = "F:\\Music"   # or an explicit path like "/Volumes/FIIO M21/Music"
 dap_profile  = "generic"
-mode         = "additive"          # additive | mirror | selective
+mode         = "mirror"          # additive | mirror | selective
 
 [filters]
 include_globs = ["**/*.flac", "**/*.dsf", "**/*.mp3"]

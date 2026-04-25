@@ -1,6 +1,8 @@
 //! Top-level app state machine: which view is active, shared state, event loop.
 
-use crate::config::SyncProfile;
+use camino::Utf8PathBuf;
+
+use crate::config::{Mode, SyncProfile};
 use crate::scan::ScanResult;
 use crate::tui::theme::Theme;
 
@@ -12,17 +14,81 @@ pub enum View {
     Log,
 }
 
+/// State of the diff computation for the diff view.
+pub enum DiffState {
+    Idle,
+    Loading,
+    Ready {
+        result: Box<crate::diff::DiffResult>,
+        source: Utf8PathBuf,
+        destination: Utf8PathBuf,
+        profile_name: String,
+        dap_id: String,
+        mode: Mode,
+    },
+    Error(String),
+}
+
+/// Which entry kinds to show in the diff entry list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntryFilter {
+    All,
+    New,
+    Modified,
+    Orphan,
+    Same,
+}
+
+impl EntryFilter {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::All => "ALL",
+            Self::New => "NEW [+]",
+            Self::Modified => "MODIFIED [~]",
+            Self::Orphan => "ORPHAN [-]",
+            Self::Same => "SAME [=]",
+        }
+    }
+
+    pub fn next(self) -> Self {
+        match self {
+            Self::All => Self::New,
+            Self::New => Self::Modified,
+            Self::Modified => Self::Orphan,
+            Self::Orphan => Self::Same,
+            Self::Same => Self::All,
+        }
+    }
+
+    pub fn matches(self, kind: crate::diff::EntryKind) -> bool {
+        use crate::diff::EntryKind;
+        match self {
+            Self::All => true,
+            Self::New => kind == EntryKind::New,
+            Self::Modified => kind == EntryKind::Modified,
+            Self::Orphan => kind == EntryKind::Orphan,
+            Self::Same => kind == EntryKind::Same,
+        }
+    }
+}
+
 pub struct App {
     pub view: View,
     pub theme: Theme,
     /// Loaded sync profiles: (display-name, profile).
     pub profiles: Vec<(String, SyncProfile)>,
     pub scan: ScanResult,
-    /// Selected index into `profiles`.
+    /// Selected index in the profiles list.
     pub profile_idx: usize,
     pub should_quit: bool,
-    /// Transient status message shown at the bottom (e.g., key hints override).
+    /// Transient status message shown in the footer.
     pub flash: Option<String>,
+    pub flash_ticks: u8,
+
+    // ── Diff view state ───────────────────────────────────────────────────
+    pub diff_state: DiffState,
+    pub diff_entry_idx: usize,
+    pub diff_entry_filter: EntryFilter,
 }
 
 impl App {
@@ -36,7 +102,6 @@ impl App {
             }
         }
 
-        // Non-fatal: scan may fail if sysinfo unavailable.
         let scan = crate::scan::run_scan().unwrap_or_else(|e| {
             tracing::warn!(err = %e, "scan failed");
             ScanResult { identified: vec![], unidentified: vec![] }
@@ -50,12 +115,18 @@ impl App {
             profile_idx: 0,
             should_quit: false,
             flash: None,
+            flash_ticks: 0,
+            diff_state: DiffState::Idle,
+            diff_entry_idx: 0,
+            diff_entry_filter: EntryFilter::All,
         })
     }
 
     pub fn selected_profile(&self) -> Option<&SyncProfile> {
         self.profiles.get(self.profile_idx).map(|(_, p)| p)
     }
+
+    // ── Profiles view ─────────────────────────────────────────────────────
 
     pub fn move_up(&mut self) {
         if self.profile_idx > 0 {
@@ -69,10 +140,48 @@ impl App {
         }
     }
 
-    /// Refresh the scan result (e.g. when user presses `r`).
     pub fn refresh_scan(&mut self) {
         if let Ok(s) = crate::scan::run_scan() {
             self.scan = s;
+            self.set_flash("scan refreshed");
+        }
+    }
+
+    // ── Diff view ─────────────────────────────────────────────────────────
+
+    pub fn enter_diff(&mut self) {
+        self.diff_state = DiffState::Loading;
+        self.diff_entry_idx = 0;
+        self.diff_entry_filter = EntryFilter::All;
+        self.view = View::Diff;
+    }
+
+    pub fn move_diff_up(&mut self) {
+        self.diff_entry_idx = self.diff_entry_idx.saturating_sub(1);
+    }
+
+    pub fn move_diff_down(&mut self) {
+        self.diff_entry_idx = self.diff_entry_idx.saturating_add(1);
+    }
+
+    pub fn cycle_diff_filter(&mut self) {
+        self.diff_entry_filter = self.diff_entry_filter.next();
+        self.diff_entry_idx = 0;
+    }
+
+    // ── Shared helpers ────────────────────────────────────────────────────
+
+    pub fn set_flash(&mut self, msg: impl Into<String>) {
+        self.flash = Some(msg.into());
+        self.flash_ticks = 12;
+    }
+
+    pub fn tick_flash(&mut self) {
+        if self.flash.is_some() {
+            self.flash_ticks = self.flash_ticks.saturating_sub(1);
+            if self.flash_ticks == 0 {
+                self.flash = None;
+            }
         }
     }
 }

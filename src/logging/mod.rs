@@ -22,6 +22,8 @@ pub struct InitOpts {
     /// Directory where `<run_id>.jsonl` will be written.
     pub jsonl_dir: PathBuf,
     pub verbosity: tracing::Level,
+    /// Suppress stderr output (use when TUI owns the terminal).
+    pub tui_mode: bool,
 }
 
 /// Returns (and creates) `$XDG_STATE_HOME/dapctl/runs/` (or platform equivalent).
@@ -44,12 +46,18 @@ pub fn init(opts: InitOpts) -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("cannot open JSONL log {jsonl_path:?}: {e}"))?;
     let jsonl_layer = JsonlLayer::new(jsonl_file, opts.run_id.to_string());
 
-    // --- Human sink: stderr ---
+    // --- Human sink: stderr (suppressed in TUI mode to avoid polluting the screen) ---
     let level_filter = tracing_subscriber::filter::LevelFilter::from_level(opts.verbosity);
-    let stderr_layer = tracing_subscriber::fmt::layer()
-        .with_target(false)
-        .compact()
-        .with_filter(level_filter);
+    let stderr_layer = if opts.tui_mode {
+        None
+    } else {
+        Some(
+            tracing_subscriber::fmt::layer()
+                .with_target(false)
+                .compact()
+                .with_filter(level_filter),
+        )
+    };
 
     // --- Human sink: optional file (no ANSI) ---
     let file_layer = if let Some(ref path) = opts.human_log_file {
