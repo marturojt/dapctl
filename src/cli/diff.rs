@@ -106,7 +106,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
             println!(
                 "  {}  {:<50}  {}",
                 tag,
-                truncate(&entry.path.to_string(), 50),
+                truncate(entry.path.as_ref(), 50),
                 fmt_bytes(entry.size_bytes),
             );
         }

@@ -182,8 +182,8 @@ fn manifest_dir() -> anyhow::Result<camino::Utf8PathBuf> {
     let dirs = directories::ProjectDirs::from("", "", "dapctl")
         .ok_or_else(|| anyhow::anyhow!("cannot determine data directory"))?;
     let path = dirs.data_local_dir().join("runs");
-    Ok(camino::Utf8PathBuf::from_path_buf(path)
-        .map_err(|p| anyhow::anyhow!("non-UTF-8 data dir: {}", p.display()))?)
+    camino::Utf8PathBuf::from_path_buf(path)
+        .map_err(|p| anyhow::anyhow!("non-UTF-8 data dir: {}", p.display()))
 }
 
 fn fmt_eta(secs: u64) -> String {
