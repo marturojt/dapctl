@@ -97,7 +97,7 @@ fn render_text_step(
         Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Length(1),
-        Constraint::Length(1),
+        Constraint::Length(3), // border + 1 line content + border
         Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Fill(1),
@@ -112,21 +112,24 @@ fn render_text_step(
         heading_area,
     );
 
-    let input_width = input_area.width.saturating_sub(4) as usize;
+    // inner width = total width minus left+right borders
+    let input_width = input_area.width.saturating_sub(2) as usize;
     let scroll = input.visual_scroll(input_width);
-    let input_para = Paragraph::new(Span::styled(
+    let input_para = Paragraph::new(Line::from(Span::styled(
         input.value(),
-        Style::default().fg(theme.fg),
-    ))
+        Style::default().fg(theme.fg).bg(theme.bg),
+    )))
     .scroll((0, scroll as u16))
     .block(
         Block::bordered()
-            .border_style(Style::default().fg(theme.warn)),
+            .border_style(Style::default().fg(theme.warn))
+            .style(Style::default().bg(theme.bg)),
     );
     f.render_widget(input_para, input_area);
 
     if show_cursor {
-        let cursor_x = input_area.x + 1 + (input.visual_cursor().min(input_width)) as u16;
+        let visual = input.visual_cursor().min(input_width.saturating_sub(1));
+        let cursor_x = input_area.x + 1 + visual as u16;
         let cursor_y = input_area.y + 1;
         f.set_cursor_position((cursor_x, cursor_y));
     }
