@@ -136,16 +136,88 @@ impl WizardStep {
     }
 }
 
+// ── File browser state ────────────────────────────────────────────────────────
+
+pub struct FileBrowserState {
+    pub current: camino::Utf8PathBuf,
+    /// Sorted list of subdirectory names in `current`.
+    pub entries: Vec<String>,
+    /// 0 = "[ select this directory ]", 1+ = entries[cursor-1].
+    pub cursor: usize,
+}
+
+impl FileBrowserState {
+    pub fn new(start: camino::Utf8PathBuf) -> Self {
+        let mut s = Self { current: start, entries: vec![], cursor: 0 };
+        s.refresh();
+        s
+    }
+
+    pub fn refresh(&mut self) {
+        self.entries.clear();
+        if let Ok(rd) = std::fs::read_dir(self.current.as_std_path()) {
+            let mut dirs: Vec<String> = rd
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+                .filter_map(|e| e.file_name().into_string().ok())
+                .collect();
+            dirs.sort_by_key(|a| a.to_lowercase());
+            self.entries = dirs;
+        }
+    }
+
+    pub fn total_items(&self) -> usize {
+        self.entries.len() + 1 // +1 for the "select" header item
+    }
+
+    pub fn move_down(&mut self) {
+        if self.cursor + 1 < self.total_items() {
+            self.cursor += 1;
+        }
+    }
+
+    pub fn move_up(&mut self) {
+        self.cursor = self.cursor.saturating_sub(1);
+    }
+
+    /// Enter selected item. Returns `true` if the user confirmed the current
+    /// directory (cursor == 0). Returns `false` if a subdir was entered.
+    pub fn enter_selected(&mut self) -> bool {
+        if self.cursor == 0 {
+            return true;
+        }
+        let idx = self.cursor - 1;
+        if let Some(name) = self.entries.get(idx).cloned() {
+            let next = self.current.join(&name);
+            self.current = next;
+            self.cursor = 0;
+            self.refresh();
+        }
+        false
+    }
+
+    pub fn go_up(&mut self) {
+        let prev = self.current.file_name().unwrap_or("").to_owned();
+        if let Some(parent) = self.current.parent() {
+            self.current = camino::Utf8PathBuf::from(parent);
+            self.refresh();
+            self.cursor = self.entries.iter().position(|e| e == &prev)
+                .map(|i| i + 1)
+                .unwrap_or(0);
+        }
+    }
+}
+
+// ── Wizard state ──────────────────────────────────────────────────────────────
+
 pub struct NewProfileState {
     pub step: WizardStep,
     pub name: tui_input::Input,
-    pub source: tui_input::Input,
-    /// Index into [identified DAPs..., manual]. Last item is always "Manual".
+    pub source_browser: FileBrowserState,
+    /// Index into [identified DAPs..., manual]. Last item is always "Browse…".
     pub dest_choice: usize,
-    /// Active when dest_choice == identified.len() (manual).
-    pub dest_manual: tui_input::Input,
-    /// Whether the destination text-input is focused (manual mode).
-    pub dest_manual_active: bool,
+    /// Active when the user chose "Browse…" in the destination list.
+    pub dest_browser: Option<FileBrowserState>,
     pub dap_choice: usize,
     pub dap_ids: Vec<String>,
     pub mode_choice: usize,
@@ -153,14 +225,20 @@ pub struct NewProfileState {
 }
 
 impl NewProfileState {
-    pub fn new(dap_ids: Vec<String>) -> Self {
+    pub fn new(dap_ids: Vec<String>, scan: &crate::scan::ScanResult) -> Self {
+        let source_start = home_dir();
+        let dest_start = scan.identified.first()
+            .map(|id| camino::Utf8PathBuf::from(&id.mount.mount_point))
+            .or_else(|| scan.unidentified.first()
+                .map(|m| camino::Utf8PathBuf::from(&m.mount_point)))
+            .unwrap_or_else(default_root);
+
         Self {
             step: WizardStep::Name,
             name: tui_input::Input::default(),
-            source: tui_input::Input::default(),
+            source_browser: FileBrowserState::new(source_start),
             dest_choice: 0,
-            dest_manual: tui_input::Input::default(),
-            dest_manual_active: false,
+            dest_browser: Some(FileBrowserState::new(dest_start)),
             dap_choice: 0,
             dap_ids,
             mode_choice: 0,
@@ -168,15 +246,21 @@ impl NewProfileState {
         }
     }
 
+    pub fn source(&self) -> String {
+        self.source_browser.current.to_string()
+    }
+
     /// Resolved destination string for the current choice + scan.
     pub fn destination(&self, scan: &crate::scan::ScanResult) -> String {
         let manual_idx = scan.identified.len();
         if self.dest_choice == manual_idx {
-            self.dest_manual.value().to_owned()
-        } else if let Some(id) = scan.identified.get(self.dest_choice) {
-            format!("auto:{}", id.dap_id)
+            self.dest_browser.as_ref()
+                .map(|b| b.current.to_string())
+                .unwrap_or_default()
         } else {
-            String::new()
+            scan.identified.get(self.dest_choice)
+                .map(|id| format!("auto:{}", id.dap_id))
+                .unwrap_or_default()
         }
     }
 
@@ -187,6 +271,19 @@ impl NewProfileState {
     pub fn selected_mode(&self) -> &'static str {
         if self.mode_choice == 0 { "additive" } else { "mirror" }
     }
+}
+
+fn home_dir() -> camino::Utf8PathBuf {
+    directories::UserDirs::new()
+        .and_then(|u| camino::Utf8PathBuf::from_path_buf(u.home_dir().to_owned()).ok())
+        .unwrap_or_else(default_root)
+}
+
+fn default_root() -> camino::Utf8PathBuf {
+    #[cfg(windows)]
+    { camino::Utf8PathBuf::from("C:\\") }
+    #[cfg(not(windows))]
+    { camino::Utf8PathBuf::from("/") }
 }
 
 // ── Progress view state ───────────────────────────────────────────────────────
@@ -424,7 +521,7 @@ impl App {
 
     pub fn enter_new_profile(&mut self) {
         let dap_ids = crate::dap::list().unwrap_or_else(|_| vec!["generic".to_owned()]);
-        self.wizard = Some(NewProfileState::new(dap_ids));
+        self.wizard = Some(NewProfileState::new(dap_ids, &self.scan));
         self.view = View::NewProfile;
     }
 

@@ -6,7 +6,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
-use crate::tui::app::{App, WizardStep};
+use crate::tui::app::{App, FileBrowserState, WizardStep};
+use crate::tui::theme::Theme;
 
 const TOTAL_STEPS: usize = 5;
 
@@ -27,7 +28,7 @@ pub fn render(f: &mut Frame, app: &App) {
             Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
         ))
         .title(
-            ratatui::text::Line::from(format!(" {step_label} "))
+            Line::from(format!(" {step_label} "))
                 .style(Style::default().fg(theme.muted))
                 .alignment(ratatui::layout::Alignment::Right),
         )
@@ -55,21 +56,13 @@ pub fn render(f: &mut Frame, app: &App) {
         );
     }
 
-    // ── Content ───────────────────────────────────────────────────────────
+    // ── Step content ──────────────────────────────────────────────────────
     match wiz.step {
-        WizardStep::Name => render_text_step(
+        WizardStep::Name => render_name(f, app, content_area, footer_area),
+        WizardStep::Source => render_browser_step(
             f, app, content_area, footer_area,
-            "Profile name",
-            "A short identifier for this profile (e.g. hiby-r4-flac)",
-            &wiz.name,
-            true,
-        ),
-        WizardStep::Source => render_text_step(
-            f, app, content_area, footer_area,
-            "Source path",
-            "Absolute path to your music library (e.g. /home/user/Music)",
-            &wiz.source,
-            true,
+            "Source — your music library",
+            &wiz.source_browser,
         ),
         WizardStep::Destination => render_destination(f, app, content_area, footer_area),
         WizardStep::DapProfile => render_dap(f, app, content_area, footer_area),
@@ -80,24 +73,74 @@ pub fn render(f: &mut Frame, app: &App) {
 
 // ── Step renderers ────────────────────────────────────────────────────────────
 
-#[allow(clippy::too_many_arguments)]
-fn render_text_step(
-    f: &mut Frame,
-    app: &App,
-    content: Rect,
-    footer: Rect,
-    heading: &str,
-    hint: &str,
-    input: &tui_input::Input,
-    show_cursor: bool,
-) {
+fn render_name(f: &mut Frame, app: &App, content: Rect, footer: Rect) {
     let theme = &app.theme;
+    let wiz = app.wizard.as_ref().unwrap();
 
     let [_, heading_area, _, input_area, _, hint_area, _] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Length(1),
-        Constraint::Length(3), // border + 1 line content + border
+        Constraint::Length(3),
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Fill(1),
+    ])
+    .areas(content);
+
+    f.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            "  Profile name",
+            Style::default()
+                .fg(theme.fg)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+        ))),
+        heading_area,
+    );
+
+    let input_width = input_area.width.saturating_sub(2) as usize;
+    let scroll = wiz.name.visual_scroll(input_width);
+    f.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            wiz.name.value(),
+            Style::default().fg(theme.fg).bg(theme.bg),
+        )))
+        .scroll((0, scroll as u16))
+        .block(
+            Block::bordered()
+                .border_style(Style::default().fg(theme.warn))
+                .style(Style::default().bg(theme.bg)),
+        ),
+        input_area,
+    );
+
+    let visual = wiz.name.visual_cursor().min(input_width.saturating_sub(1));
+    f.set_cursor_position((input_area.x + 1 + visual as u16, input_area.y + 1));
+
+    f.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            "  A short identifier (e.g. hiby-r4-flac). Used as the filename.",
+            Style::default().fg(theme.muted),
+        ))),
+        hint_area,
+    );
+
+    render_text_footer(f, app, footer);
+}
+
+fn render_browser_step(
+    f: &mut Frame,
+    app: &App,
+    content: Rect,
+    footer: Rect,
+    heading: &str,
+    browser: &FileBrowserState,
+) {
+    let theme = &app.theme;
+
+    let [_, heading_area, path_area, _, list_area] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Fill(1),
@@ -107,59 +150,46 @@ fn render_text_step(
     f.render_widget(
         Paragraph::new(Line::from(Span::styled(
             format!("  {heading}"),
-            Style::default().fg(theme.fg).add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+            Style::default()
+                .fg(theme.fg)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         ))),
         heading_area,
     );
 
-    // inner width = total width minus left+right borders
-    let input_width = input_area.width.saturating_sub(2) as usize;
-    let scroll = input.visual_scroll(input_width);
-    let input_para = Paragraph::new(Line::from(Span::styled(
-        input.value(),
-        Style::default().fg(theme.fg).bg(theme.bg),
-    )))
-    .scroll((0, scroll as u16))
-    .block(
-        Block::bordered()
-            .border_style(Style::default().fg(theme.warn))
-            .style(Style::default().bg(theme.bg)),
-    );
-    f.render_widget(input_para, input_area);
-
-    if show_cursor {
-        let visual = input.visual_cursor().min(input_width.saturating_sub(1));
-        let cursor_x = input_area.x + 1 + visual as u16;
-        let cursor_y = input_area.y + 1;
-        f.set_cursor_position((cursor_x, cursor_y));
-    }
-
     f.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            format!("  {hint}"),
-            Style::default().fg(theme.muted),
-        ))),
-        hint_area,
+        Paragraph::new(Line::from(vec![
+            Span::styled("  ", Style::default()),
+            Span::styled(
+                browser.current.as_str(),
+                Style::default().fg(theme.warn).add_modifier(Modifier::BOLD),
+            ),
+        ])),
+        path_area,
     );
 
-    render_text_footer(f, app, footer);
+    render_browser_list(f, theme, browser, list_area);
+    render_browser_footer(f, app, footer);
 }
 
 fn render_destination(f: &mut Frame, app: &App, content: Rect, footer: Rect) {
     let theme = &app.theme;
     let wiz = app.wizard.as_ref().unwrap();
+    let manual_idx = app.scan.identified.len();
 
-    if wiz.dest_manual_active {
-        render_text_step(
-            f, app, content, footer,
-            "Destination path",
-            "Absolute path or drive letter (e.g. F:\\Music or /mnt/dap/Music)",
-            &wiz.dest_manual,
-            true,
-        );
-        return;
+    // If "Browse…" is selected, show the file browser.
+    if wiz.dest_choice == manual_idx {
+        if let Some(ref browser) = wiz.dest_browser {
+            render_browser_step(
+                f, app, content, footer,
+                "Destination — browse to the folder on your DAP",
+                browser,
+            );
+            return;
+        }
     }
 
+    // Otherwise show the DAP list.
     let [_, heading_area, _, list_area] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Length(1),
@@ -171,35 +201,42 @@ fn render_destination(f: &mut Frame, app: &App, content: Rect, footer: Rect) {
     f.render_widget(
         Paragraph::new(Line::from(Span::styled(
             "  Destination",
-            Style::default().fg(theme.fg).add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+            Style::default()
+                .fg(theme.fg)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         ))),
         heading_area,
     );
 
     let mut items: Vec<ListItem> = app.scan.identified.iter().map(|id| {
         ListItem::new(Line::from(vec![
-            Span::styled(format!("  {:<20}", id.dap_id), Style::default().fg(theme.fg)),
             Span::styled(
-                format!("  auto:{:<16}  {}", id.dap_id, id.mount.mount_point),
+                format!("  {:<22}", id.dap_id),
+                Style::default().fg(theme.fg),
+            ),
+            Span::styled(
+                format!("auto:{:<16}  {}", id.dap_id, id.mount.mount_point),
                 Style::default().fg(theme.muted),
             ),
         ]))
     }).collect();
     items.push(ListItem::new(Line::from(Span::styled(
-        "  Manual path…",
-        Style::default().fg(theme.muted),
+        "  Browse filesystem…",
+        Style::default().fg(theme.muted).add_modifier(Modifier::ITALIC),
     ))));
 
     let list = List::new(items)
         .style(Style::default().bg(theme.bg))
         .highlight_style(
-            Style::default().fg(theme.sel_fg).bg(theme.sel_bg).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme.sel_fg)
+                .bg(theme.sel_bg)
+                .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol("▶");
 
     let mut state = ListState::default().with_selected(Some(wiz.dest_choice));
     f.render_stateful_widget(list, list_area, &mut state);
-
     render_list_footer(f, app, footer);
 }
 
@@ -218,25 +255,29 @@ fn render_dap(f: &mut Frame, app: &App, content: Rect, footer: Rect) {
     f.render_widget(
         Paragraph::new(Line::from(Span::styled(
             "  DAP profile",
-            Style::default().fg(theme.fg).add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+            Style::default()
+                .fg(theme.fg)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         ))),
         heading_area,
     );
 
-    let items: Vec<ListItem> = wiz.dap_ids.iter().map(|id| {
-        ListItem::new(Line::from(Span::raw(format!("  {id}"))))
-    }).collect();
+    let items: Vec<ListItem> = wiz.dap_ids.iter()
+        .map(|id| ListItem::new(Line::from(Span::raw(format!("  {id}")))))
+        .collect();
 
     let list = List::new(items)
         .style(Style::default().fg(theme.fg).bg(theme.bg))
         .highlight_style(
-            Style::default().fg(theme.sel_fg).bg(theme.sel_bg).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme.sel_fg)
+                .bg(theme.sel_bg)
+                .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol("▶");
 
     let mut state = ListState::default().with_selected(Some(wiz.dap_choice));
     f.render_stateful_widget(list, list_area, &mut state);
-
     render_list_footer(f, app, footer);
 }
 
@@ -255,7 +296,9 @@ fn render_mode(f: &mut Frame, app: &App, content: Rect, footer: Rect) {
     f.render_widget(
         Paragraph::new(Line::from(Span::styled(
             "  Sync mode",
-            Style::default().fg(theme.fg).add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+            Style::default()
+                .fg(theme.fg)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         ))),
         heading_area,
     );
@@ -267,7 +310,10 @@ fn render_mode(f: &mut Frame, app: &App, content: Rect, footer: Rect) {
 
     let items: Vec<ListItem> = modes.iter().map(|(name, desc)| {
         ListItem::new(Line::from(vec![
-            Span::styled(format!("  {name:<12}"), Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("  {name:<12}"),
+                Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
+            ),
             Span::styled(format!("  {desc}"), Style::default().fg(theme.muted)),
         ]))
     }).collect();
@@ -275,35 +321,39 @@ fn render_mode(f: &mut Frame, app: &App, content: Rect, footer: Rect) {
     let list = List::new(items)
         .style(Style::default().bg(theme.bg))
         .highlight_style(
-            Style::default().fg(theme.sel_fg).bg(theme.sel_bg).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme.sel_fg)
+                .bg(theme.sel_bg)
+                .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol("▶");
 
     let mut state = ListState::default().with_selected(Some(wiz.mode_choice));
     f.render_stateful_widget(list, list_area, &mut state);
-
     render_list_footer(f, app, footer);
 }
 
 fn render_confirm(f: &mut Frame, app: &App, content: Rect, footer: Rect) {
     let theme = &app.theme;
     let wiz = app.wizard.as_ref().unwrap();
-
+    let source = wiz.source();
     let dest = wiz.destination(&app.scan);
     let dir = crate::config::profiles_dir()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|_| "~/.config/dapctl/profiles/".to_owned());
-    let filename = new_profile_filename(wiz.name.value());
+    let filename = sanitize_name(wiz.name.value());
 
     let lines = vec![
         Line::raw(""),
         Line::from(Span::styled(
             "  Profile ready to write",
-            Style::default().fg(theme.fg).add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+            Style::default()
+                .fg(theme.fg)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         )),
         Line::raw(""),
         summary_row("  name        ", wiz.name.value().trim(), theme),
-        summary_row("  source      ", wiz.source.value().trim(), theme),
+        summary_row("  source      ", &source, theme),
         summary_row("  destination ", &dest, theme),
         summary_row("  DAP profile ", wiz.selected_dap(), theme),
         summary_row("  mode        ", wiz.selected_mode(), theme),
@@ -322,56 +372,105 @@ fn render_confirm(f: &mut Frame, app: &App, content: Rect, footer: Rect) {
         content,
     );
 
-    // Footer
-    let footer_line = Line::from(vec![
-        kb("enter"),
-        Span::raw(" confirm  "),
-        kb("esc"),
-        Span::raw(" back  "),
-        kb("q"),
-        Span::raw(" cancel"),
-    ]);
     f.render_widget(
-        Paragraph::new(footer_line).style(Style::default().fg(theme.muted)),
+        Paragraph::new(Line::from(vec![
+            kb("enter"), Span::raw(" confirm  "),
+            kb("esc"),   Span::raw(" back  "),
+            kb("q"),     Span::raw(" cancel"),
+        ]))
+        .style(Style::default().fg(theme.muted)),
         footer,
     );
 }
 
-// ── Shared footer helpers ─────────────────────────────────────────────────────
+// ── File browser list ─────────────────────────────────────────────────────────
+
+fn render_browser_list(
+    f: &mut Frame,
+    theme: &Theme,
+    browser: &FileBrowserState,
+    area: Rect,
+) {
+    let visible = area.height as usize;
+    let scroll = if browser.cursor < visible {
+        0
+    } else {
+        browser.cursor - visible + 1
+    };
+
+    // Item 0: "[ ✓ select this directory ]"
+    let select_item = ListItem::new(Line::from(Span::styled(
+        "  [ ✓ select this directory ]",
+        Style::default().fg(theme.warn).add_modifier(Modifier::BOLD),
+    )));
+
+    let mut items = vec![select_item];
+    items.extend(browser.entries.iter().map(|name| {
+        ListItem::new(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(name.as_str(), Style::default().fg(theme.fg)),
+            Span::styled("/", Style::default().fg(theme.muted)),
+        ]))
+    }));
+
+    let list = List::new(items)
+        .style(Style::default().bg(theme.bg))
+        .highlight_style(
+            Style::default()
+                .fg(theme.sel_fg)
+                .bg(theme.sel_bg)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("▶");
+
+    let mut state = ListState::default()
+        .with_selected(Some(browser.cursor))
+        .with_offset(scroll);
+    f.render_stateful_widget(list, area, &mut state);
+}
+
+// ── Footer helpers ────────────────────────────────────────────────────────────
 
 fn render_text_footer(f: &mut Frame, app: &App, area: Rect) {
-    let theme = &app.theme;
-    let line = Line::from(vec![
-        kb("enter"),
-        Span::raw(" next  "),
-        kb("esc"),
-        Span::raw(" back  "),
-        kb("ctrl+c"),
-        Span::raw(" quit"),
-    ]);
     f.render_widget(
-        Paragraph::new(line).style(Style::default().fg(theme.muted)),
+        Paragraph::new(Line::from(vec![
+            kb("enter"), Span::raw(" next  "),
+            kb("esc"),   Span::raw(" back  "),
+            kb("ctrl+c"), Span::raw(" quit"),
+        ]))
+        .style(Style::default().fg(app.theme.muted)),
+        area,
+    );
+}
+
+fn render_browser_footer(f: &mut Frame, app: &App, area: Rect) {
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            kb("j/k"),        Span::raw(" navigate  "),
+            kb("l/enter/→"),  Span::raw(" open / select  "),
+            kb("h/←"),        Span::raw(" parent  "),
+            kb("esc"),        Span::raw(" back"),
+        ]))
+        .style(Style::default().fg(app.theme.muted)),
         area,
     );
 }
 
 fn render_list_footer(f: &mut Frame, app: &App, area: Rect) {
-    let theme = &app.theme;
-    let line = Line::from(vec![
-        kb("j/k"),
-        Span::raw(" move  "),
-        kb("enter"),
-        Span::raw(" select  "),
-        kb("esc"),
-        Span::raw(" back"),
-    ]);
     f.render_widget(
-        Paragraph::new(line).style(Style::default().fg(theme.muted)),
+        Paragraph::new(Line::from(vec![
+            kb("j/k"),   Span::raw(" move  "),
+            kb("enter"), Span::raw(" select  "),
+            kb("esc"),   Span::raw(" back"),
+        ]))
+        .style(Style::default().fg(app.theme.muted)),
         area,
     );
 }
 
-fn summary_row<'a>(label: &'a str, value: &'a str, theme: &'a crate::tui::theme::Theme) -> Line<'a> {
+// ── Small helpers ─────────────────────────────────────────────────────────────
+
+fn summary_row<'a>(label: &'a str, value: &'a str, theme: &'a Theme) -> Line<'a> {
     Line::from(vec![
         Span::styled(label, Style::default().fg(theme.muted)),
         Span::styled(value, Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)),
@@ -385,12 +484,10 @@ fn kb(key: &str) -> Span<'static> {
     )
 }
 
-// ── Filename helper ───────────────────────────────────────────────────────────
-
-pub fn new_profile_filename(name: &str) -> String {
-    let slug: String = name
-        .chars()
+pub fn sanitize_name(s: &str) -> String {
+    s.chars()
         .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
-        .collect();
-    slug.trim_matches('-').to_lowercase()
+        .collect::<String>()
+        .trim_matches('-')
+        .to_lowercase()
 }
