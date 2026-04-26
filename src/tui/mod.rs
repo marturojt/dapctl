@@ -275,9 +275,9 @@ fn handle_wizard_key(app: &mut App, key: crossterm::event::KeyEvent) {
         WizardStep::Source => {
             let wiz = app.wizard.as_mut().unwrap();
             match key.code {
-                K::Char('j') | K::Down  => wiz.source_browser.move_down(),
-                K::Char('k') | K::Up    => wiz.source_browser.move_up(),
-                K::Char('h') | K::Left | K::Backspace => wiz.source_browser.go_up(),
+                K::Char('j') | K::Down       => wiz.source_browser.move_down(),
+                K::Char('k') | K::Up         => wiz.source_browser.move_up(),
+                K::Char('h') | K::Left       => wiz.source_browser.go_up(),
                 K::Enter | K::Char('l') | K::Right
                     if wiz.source_browser.enter_selected() => {
                     wiz.error = None;
@@ -297,9 +297,9 @@ fn handle_wizard_key(app: &mut App, key: crossterm::event::KeyEvent) {
                 let wiz = app.wizard.as_mut().unwrap();
                 let browser = wiz.dest_browser.as_mut().unwrap();
                 match key.code {
-                    K::Char('j') | K::Down  => browser.move_down(),
-                    K::Char('k') | K::Up    => browser.move_up(),
-                    K::Char('h') | K::Left | K::Backspace => browser.go_up(),
+                    K::Char('j') | K::Down       => browser.move_down(),
+                    K::Char('k') | K::Up         => browser.move_up(),
+                    K::Char('h') | K::Left       => browser.go_up(),
                     K::Enter | K::Char('l') | K::Right
                         if browser.enter_selected() => {
                         wiz.error = None;
@@ -318,7 +318,7 @@ fn handle_wizard_key(app: &mut App, key: crossterm::event::KeyEvent) {
                         wiz.error = None;
                         wiz.step = WizardStep::DapProfile;
                     }
-                    K::Enter => {} // dest_choice == manual_idx → browser view active on next frame
+                    K::Enter => {} // dest_choice == manual_idx → browser active on next frame
                     _ => {}
                 }
             }

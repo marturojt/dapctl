@@ -139,21 +139,46 @@ impl WizardStep {
 // ── File browser state ────────────────────────────────────────────────────────
 
 pub struct FileBrowserState {
+    /// Current directory. Empty when showing the drives list (Windows virtual root).
     pub current: camino::Utf8PathBuf,
-    /// Sorted list of subdirectory names in `current`.
+    /// Subdirectory names (normal mode) or drive roots (drives-root mode).
     pub entries: Vec<String>,
-    /// 0 = "[ select this directory ]", 1+ = entries[cursor-1].
+    /// cursor == 0 → "[ ✓ select this directory ]" (only in normal mode).
+    /// cursor == N → entries[N-1] in normal mode, entries[N] in drives-root mode.
     pub cursor: usize,
+    /// True when showing available drives instead of a real directory (Windows).
+    pub at_drives_root: bool,
 }
 
 impl FileBrowserState {
+    /// Start at a concrete directory.
     pub fn new(start: camino::Utf8PathBuf) -> Self {
-        let mut s = Self { current: start, entries: vec![], cursor: 0 };
+        let mut s = Self {
+            current: start,
+            entries: vec![],
+            cursor: 0,
+            at_drives_root: false,
+        };
         s.refresh();
         s
     }
 
+    /// Start at the virtual drives root (Windows) or "/" (Unix).
+    pub fn drives_root() -> Self {
+        let entries = available_drives();
+        Self {
+            current: camino::Utf8PathBuf::from(""),
+            entries,
+            cursor: 0,
+            at_drives_root: true,
+        }
+    }
+
     pub fn refresh(&mut self) {
+        if self.at_drives_root {
+            self.entries = available_drives();
+            return;
+        }
         self.entries.clear();
         if let Ok(rd) = std::fs::read_dir(self.current.as_std_path()) {
             let mut dirs: Vec<String> = rd
@@ -166,8 +191,9 @@ impl FileBrowserState {
         }
     }
 
+    /// Total selectable items: +1 for the "select" header in normal mode.
     pub fn total_items(&self) -> usize {
-        self.entries.len() + 1 // +1 for the "select" header item
+        if self.at_drives_root { self.entries.len() } else { self.entries.len() + 1 }
     }
 
     pub fn move_down(&mut self) {
@@ -180,32 +206,77 @@ impl FileBrowserState {
         self.cursor = self.cursor.saturating_sub(1);
     }
 
-    /// Enter selected item. Returns `true` if the user confirmed the current
-    /// directory (cursor == 0). Returns `false` if a subdir was entered.
+    /// Activate the highlighted item.
+    /// Returns `true` only when the user chose "[ ✓ select this directory ]".
     pub fn enter_selected(&mut self) -> bool {
+        if self.at_drives_root {
+            if let Some(drive) = self.entries.get(self.cursor).cloned() {
+                self.current = camino::Utf8PathBuf::from(&drive);
+                self.at_drives_root = false;
+                self.cursor = 0;
+                self.refresh();
+            }
+            return false;
+        }
         if self.cursor == 0 {
-            return true;
+            return true; // user confirmed current dir
         }
         let idx = self.cursor - 1;
         if let Some(name) = self.entries.get(idx).cloned() {
-            let next = self.current.join(&name);
-            self.current = next;
+            self.current = self.current.join(&name);
             self.cursor = 0;
             self.refresh();
         }
         false
     }
 
+    /// Go up one directory level. From a drive root, returns to the drives list.
     pub fn go_up(&mut self) {
+        if self.at_drives_root {
+            return; // already at top
+        }
+        if is_fs_root(&self.current) {
+            // Step up to virtual drives list.
+            let prev = self.current.as_str().to_owned();
+            self.at_drives_root = true;
+            self.current = camino::Utf8PathBuf::from("");
+            self.entries = available_drives();
+            self.cursor = self.entries.iter().position(|e| e == &prev).unwrap_or(0);
+            return;
+        }
         let prev = self.current.file_name().unwrap_or("").to_owned();
         if let Some(parent) = self.current.parent() {
             self.current = camino::Utf8PathBuf::from(parent);
             self.refresh();
             self.cursor = self.entries.iter().position(|e| e == &prev)
-                .map(|i| i + 1)
+                .map(|i| i + 1) // +1 for "select" item
                 .unwrap_or(0);
         }
     }
+
+    /// Human-readable label for the current location.
+    pub fn location_label(&self) -> &str {
+        if self.at_drives_root { "drives" } else { self.current.as_str() }
+    }
+}
+
+fn is_fs_root(path: &camino::Utf8Path) -> bool {
+    #[cfg(windows)]
+    { let s = path.as_str(); s.len() <= 3 && s.contains(':') }
+    #[cfg(not(windows))]
+    { path.as_str() == "/" }
+}
+
+fn available_drives() -> Vec<String> {
+    #[cfg(windows)]
+    {
+        ('A'..='Z')
+            .map(|c| format!("{c}:\\"))
+            .filter(|d| std::path::Path::new(d).exists())
+            .collect()
+    }
+    #[cfg(not(windows))]
+    { vec!["/".to_owned()] }
 }
 
 // ── Wizard state ──────────────────────────────────────────────────────────────
@@ -226,19 +297,23 @@ pub struct NewProfileState {
 
 impl NewProfileState {
     pub fn new(dap_ids: Vec<String>, scan: &crate::scan::ScanResult) -> Self {
-        let source_start = home_dir();
-        let dest_start = scan.identified.first()
-            .map(|id| camino::Utf8PathBuf::from(&id.mount.mount_point))
+        // Source: start at virtual drives root so the user can pick any drive.
+        let source_browser = FileBrowserState::drives_root();
+
+        // Destination browser: start at the first detected removable drive if
+        // available; otherwise fall back to drives root.
+        let dest_browser = scan.identified.first()
+            .map(|id| FileBrowserState::new(camino::Utf8PathBuf::from(&id.mount.mount_point)))
             .or_else(|| scan.unidentified.first()
-                .map(|m| camino::Utf8PathBuf::from(&m.mount_point)))
-            .unwrap_or_else(default_root);
+                .map(|m| FileBrowserState::new(camino::Utf8PathBuf::from(&m.mount_point))))
+            .unwrap_or_else(FileBrowserState::drives_root);
 
         Self {
             step: WizardStep::Name,
             name: tui_input::Input::default(),
-            source_browser: FileBrowserState::new(source_start),
+            source_browser,
             dest_choice: 0,
-            dest_browser: Some(FileBrowserState::new(dest_start)),
+            dest_browser: Some(dest_browser),
             dap_choice: 0,
             dap_ids,
             mode_choice: 0,
@@ -273,18 +348,6 @@ impl NewProfileState {
     }
 }
 
-fn home_dir() -> camino::Utf8PathBuf {
-    directories::UserDirs::new()
-        .and_then(|u| camino::Utf8PathBuf::from_path_buf(u.home_dir().to_owned()).ok())
-        .unwrap_or_else(default_root)
-}
-
-fn default_root() -> camino::Utf8PathBuf {
-    #[cfg(windows)]
-    { camino::Utf8PathBuf::from("C:\\") }
-    #[cfg(not(windows))]
-    { camino::Utf8PathBuf::from("/") }
-}
 
 // ── Progress view state ───────────────────────────────────────────────────────
 

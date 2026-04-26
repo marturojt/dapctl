@@ -157,19 +157,21 @@ fn render_browser_step(
         heading_area,
     );
 
+    let (path_str, path_style) = if browser.at_drives_root {
+        ("  [ select a drive ]", Style::default().fg(theme.muted))
+    } else {
+        (browser.current.as_str(), Style::default().fg(theme.warn).add_modifier(Modifier::BOLD))
+    };
     f.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled("  ", Style::default()),
-            Span::styled(
-                browser.current.as_str(),
-                Style::default().fg(theme.warn).add_modifier(Modifier::BOLD),
-            ),
-        ])),
+        Paragraph::new(Line::from(Span::styled(
+            if browser.at_drives_root { path_str.to_owned() } else { format!("  {path_str}") },
+            path_style,
+        ))),
         path_area,
     );
 
     render_browser_list(f, theme, browser, list_area);
-    render_browser_footer(f, app, footer);
+    render_browser_footer(f, app, footer, !browser.at_drives_root);
 }
 
 fn render_destination(f: &mut Frame, app: &App, content: Rect, footer: Rect) {
@@ -180,11 +182,8 @@ fn render_destination(f: &mut Frame, app: &App, content: Rect, footer: Rect) {
     // If "Browse…" is selected, show the file browser.
     if wiz.dest_choice == manual_idx {
         if let Some(ref browser) = wiz.dest_browser {
-            render_browser_step(
-                f, app, content, footer,
-                "Destination — browse to the folder on your DAP",
-                browser,
-            );
+            render_browser_step(f, app, content, footer,
+                "Destination — browse to the folder on your DAP", browser);
             return;
         }
     }
@@ -392,26 +391,43 @@ fn render_browser_list(
     area: Rect,
 ) {
     let visible = area.height as usize;
-    let scroll = if browser.cursor < visible {
-        0
+    let scroll = browser.cursor.saturating_sub(visible.saturating_sub(1));
+
+    let items: Vec<ListItem> = if browser.at_drives_root {
+        // Drives list — no "select" header, just the drive letters.
+        browser.entries.iter().map(|drive| {
+            ListItem::new(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(drive.as_str(), Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)),
+            ]))
+        }).collect()
     } else {
-        browser.cursor - visible + 1
+        // Normal directory listing.
+        let select = ListItem::new(Line::from(Span::styled(
+            "  [ ✓ select this directory ]",
+            Style::default().fg(theme.warn).add_modifier(Modifier::BOLD),
+        )));
+        let mut v = vec![select];
+        v.extend(browser.entries.iter().map(|name| {
+            ListItem::new(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(name.as_str(), Style::default().fg(theme.fg)),
+                Span::styled("/", Style::default().fg(theme.muted)),
+            ]))
+        }));
+        v
     };
 
-    // Item 0: "[ ✓ select this directory ]"
-    let select_item = ListItem::new(Line::from(Span::styled(
-        "  [ ✓ select this directory ]",
-        Style::default().fg(theme.warn).add_modifier(Modifier::BOLD),
-    )));
-
-    let mut items = vec![select_item];
-    items.extend(browser.entries.iter().map(|name| {
-        ListItem::new(Line::from(vec![
-            Span::raw("  "),
-            Span::styled(name.as_str(), Style::default().fg(theme.fg)),
-            Span::styled("/", Style::default().fg(theme.muted)),
-        ]))
-    }));
+    if items.is_empty() {
+        f.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                "  (empty directory)",
+                Style::default().fg(theme.muted),
+            ))),
+            area,
+        );
+        return;
+    }
 
     let list = List::new(items)
         .style(Style::default().bg(theme.bg))
@@ -443,15 +459,21 @@ fn render_text_footer(f: &mut Frame, app: &App, area: Rect) {
     );
 }
 
-fn render_browser_footer(f: &mut Frame, app: &App, area: Rect) {
+fn render_browser_footer(f: &mut Frame, app: &App, area: Rect, can_go_up: bool) {
+    let mut spans = vec![
+        kb("j/k"),       Span::raw(" navigate  "),
+        kb("enter/l/→"), Span::raw(" open/select  "),
+    ];
+    if can_go_up {
+        spans.push(kb("h/←"));
+        spans.push(Span::raw(" parent  "));
+    }
+    spans.push(kb("esc"));
+    spans.push(Span::raw(" back"));
+
     f.render_widget(
-        Paragraph::new(Line::from(vec![
-            kb("j/k"),        Span::raw(" navigate  "),
-            kb("l/enter/→"),  Span::raw(" open / select  "),
-            kb("h/←"),        Span::raw(" parent  "),
-            kb("esc"),        Span::raw(" back"),
-        ]))
-        .style(Style::default().fg(app.theme.muted)),
+        Paragraph::new(Line::from(spans))
+            .style(Style::default().fg(app.theme.muted)),
         area,
     );
 }
