@@ -16,7 +16,7 @@ use crossterm::ExecutableCommand;
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
-use app::{App, DiffState, ProgressState, View};
+use app::{App, DiffState, ProgressState, View, WizardStep};
 
 pub fn run() -> anyhow::Result<()> {
     let mut app = App::new()?;
@@ -56,8 +56,13 @@ fn event_loop(
         }
 
         if event::poll(Duration::from_millis(100))? {
-            if let Event::Key(key) = event::read()? {
-                handle_key(app, key.code, key.modifiers);
+            let ev = event::read()?;
+            if let Event::Key(key) = ev {
+                if app.view == View::NewProfile {
+                    handle_wizard_key(app, key);
+                } else {
+                    handle_key(app, key.code, key.modifiers);
+                }
             }
         }
 
@@ -74,6 +79,7 @@ fn draw(f: &mut ratatui::Frame, app: &App) {
         View::Diff => views::diff::render(f, app),
         View::Progress => views::progress::render(f, app),
         View::Log => views::placeholder::render(f, app),
+        View::NewProfile => views::new_profile::render(f, app),
     }
 }
 
@@ -115,6 +121,9 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
         }
         (KeyCode::Char('r'), _) if app.view == View::Profiles => {
             app.refresh_scan();
+        }
+        (KeyCode::Char('n'), _) if app.view == View::Profiles => {
+            app.enter_new_profile();
         }
 
         // ── Diff ─────────────────────────────────────────────────────────
@@ -212,6 +221,221 @@ fn launch_sync(app: &mut App) {
     app.progress_rx = Some(rx);
     app.progress_state = Some(ProgressState::new(profile_name, total_bytes));
     app.view = View::Progress;
+}
+
+// ── New profile wizard ────────────────────────────────────────────────────────
+
+fn handle_wizard_key(app: &mut App, key: crossterm::event::KeyEvent) {
+    use crossterm::event::KeyCode as K;
+    use tui_input::backend::crossterm::EventHandler;
+
+    let Some(ref mut wiz) = app.wizard else { return };
+
+    // Ctrl-C always quits.
+    if key.code == K::Char('c') && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
+        app.should_quit = true;
+        return;
+    }
+
+    // Esc: go back one step or exit wizard.
+    if key.code == K::Esc {
+        if wiz.dest_manual_active {
+            wiz.dest_manual_active = false;
+            return;
+        }
+        match wiz.step.prev() {
+            Some(prev) => wiz.step = prev,
+            None => {
+                app.view = View::Profiles;
+                app.wizard = None;
+            }
+        }
+        return;
+    }
+
+    match wiz.step {
+        // ── Text input steps ──────────────────────────────────────────────
+        WizardStep::Name => {
+            if key.code == K::Enter {
+                if wiz.name.value().trim().is_empty() {
+                    app.wizard.as_mut().unwrap().error = Some("name cannot be empty".to_owned());
+                    return;
+                }
+                app.wizard.as_mut().unwrap().error = None;
+                app.wizard.as_mut().unwrap().step = WizardStep::Source;
+            } else {
+                app.wizard.as_mut().unwrap().name
+                    .handle_event(&crossterm::event::Event::Key(key));
+            }
+        }
+        WizardStep::Source => {
+            if key.code == K::Enter {
+                if wiz.source.value().trim().is_empty() {
+                    app.wizard.as_mut().unwrap().error = Some("source cannot be empty".to_owned());
+                    return;
+                }
+                app.wizard.as_mut().unwrap().error = None;
+                app.wizard.as_mut().unwrap().step = WizardStep::Destination;
+            } else {
+                app.wizard.as_mut().unwrap().source
+                    .handle_event(&crossterm::event::Event::Key(key));
+            }
+        }
+
+        // ── Destination list / manual input ───────────────────────────────
+        WizardStep::Destination => {
+            let manual_idx = app.scan.identified.len();
+            let wiz = app.wizard.as_mut().unwrap();
+
+            if wiz.dest_manual_active {
+                if key.code == K::Enter {
+                    if wiz.dest_manual.value().trim().is_empty() {
+                        wiz.error = Some("destination cannot be empty".to_owned());
+                        return;
+                    }
+                    wiz.error = None;
+                    wiz.dest_manual_active = false;
+                    wiz.step = WizardStep::DapProfile;
+                } else {
+                    wiz.dest_manual.handle_event(&crossterm::event::Event::Key(key));
+                }
+                return;
+            }
+
+            let total_choices = manual_idx + 1;
+            match key.code {
+                K::Char('j') | K::Down => {
+                    wiz.dest_choice = (wiz.dest_choice + 1).min(total_choices - 1);
+                }
+                K::Char('k') | K::Up => {
+                    wiz.dest_choice = wiz.dest_choice.saturating_sub(1);
+                }
+                K::Enter => {
+                    if wiz.dest_choice == manual_idx {
+                        wiz.dest_manual_active = true;
+                    } else {
+                        wiz.error = None;
+                        wiz.step = WizardStep::DapProfile;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // ── DAP profile list ──────────────────────────────────────────────
+        WizardStep::DapProfile => {
+            let wiz = app.wizard.as_mut().unwrap();
+            let n = wiz.dap_ids.len().max(1);
+            match key.code {
+                K::Char('j') | K::Down => wiz.dap_choice = (wiz.dap_choice + 1).min(n - 1),
+                K::Char('k') | K::Up => wiz.dap_choice = wiz.dap_choice.saturating_sub(1),
+                K::Enter => wiz.step = WizardStep::Mode,
+                _ => {}
+            }
+        }
+
+        // ── Mode selector ─────────────────────────────────────────────────
+        WizardStep::Mode => {
+            let wiz = app.wizard.as_mut().unwrap();
+            match key.code {
+                K::Char('j') | K::Down => wiz.mode_choice = (wiz.mode_choice + 1).min(1),
+                K::Char('k') | K::Up => wiz.mode_choice = wiz.mode_choice.saturating_sub(1),
+                K::Enter => wiz.step = WizardStep::Confirm,
+                _ => {}
+            }
+        }
+
+        // ── Confirm ───────────────────────────────────────────────────────
+        WizardStep::Confirm => {
+            if key.code == K::Enter {
+                match write_new_profile(app) {
+                    Ok(filename) => {
+                        app.view = View::Profiles;
+                        // Reload profiles so the new one appears.
+                        if let Ok(discovered) = crate::config::discover() {
+                            app.profiles.clear();
+                            for (name, path) in discovered {
+                                match crate::config::load(&path) {
+                                    Ok(p) => app.profiles.push((name, p)),
+                                    Err(e) => tracing::warn!(err = %e, "skipping profile"),
+                                }
+                            }
+                            // Select the new profile.
+                            if let Some(idx) = app.profiles.iter().position(|(_, p)| {
+                                p.profile.name == filename
+                            }) {
+                                app.profile_idx = idx;
+                            }
+                        }
+                        app.wizard = None;
+                        app.set_flash(format!("profile '{filename}' created"));
+                    }
+                    Err(e) => {
+                        app.wizard.as_mut().unwrap().error = Some(e.to_string());
+                    }
+                }
+            } else if key.code == K::Char('q') {
+                app.view = View::Profiles;
+                app.wizard = None;
+            }
+        }
+    }
+}
+
+/// Write the wizard state to a `.toml` file in the profiles directory.
+/// Returns the internal profile name on success.
+fn write_new_profile(app: &App) -> anyhow::Result<String> {
+    let wiz = app.wizard.as_ref().unwrap();
+
+    let name = wiz.name.value().trim().to_owned();
+    let source = wiz.source.value().trim().to_owned();
+    let destination = wiz.destination(&app.scan);
+    let dap = wiz.selected_dap().to_owned();
+    let mode = wiz.selected_mode();
+
+    if name.is_empty() { anyhow::bail!("name is empty"); }
+    if source.is_empty() { anyhow::bail!("source is empty"); }
+    if destination.is_empty() { anyhow::bail!("destination is empty"); }
+
+    let filename = sanitize_filename(&name);
+    let dir = crate::config::profiles_dir()?;
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join(format!("{filename}.toml"));
+
+    if path.exists() {
+        anyhow::bail!("profile file '{filename}.toml' already exists");
+    }
+
+    let content = format!(
+        "schema_version = 1\n\
+         \n\
+         [profile]\n\
+         name        = \"{name}\"\n\
+         source      = \"{source}\"\n\
+         destination = \"{destination}\"\n\
+         dap_profile = \"{dap}\"\n\
+         mode        = \"{mode}\"\n\
+         \n\
+         [filters]\n\
+         include_globs = []\n\
+         exclude_globs = []\n\
+         \n\
+         [transfer]\n\
+         verify          = \"size+mtime\"\n\
+         dry_run_default = true\n\
+         parallelism     = 4\n"
+    );
+
+    std::fs::write(&path, content)?;
+    Ok(name)
+}
+
+fn sanitize_filename(s: &str) -> String {
+    let slug: String = s
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .collect();
+    slug.trim_matches('-').to_lowercase()
 }
 
 // ── Diff computation ──────────────────────────────────────────────────────────

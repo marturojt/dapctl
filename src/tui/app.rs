@@ -17,6 +17,7 @@ pub enum View {
     Diff,
     Progress,
     Log,
+    NewProfile,
 }
 
 /// State of the diff computation.
@@ -74,6 +75,117 @@ impl EntryFilter {
             Self::Orphan => kind == EntryKind::Orphan,
             Self::Same => kind == EntryKind::Same,
         }
+    }
+}
+
+// ── New profile wizard state ──────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WizardStep {
+    Name,
+    Source,
+    Destination,
+    DapProfile,
+    Mode,
+    Confirm,
+}
+
+impl WizardStep {
+    pub fn number(self) -> usize {
+        match self {
+            Self::Name => 1,
+            Self::Source => 2,
+            Self::Destination => 3,
+            Self::DapProfile => 4,
+            Self::Mode => 5,
+            Self::Confirm => 6,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Name => "profile name",
+            Self::Source => "source path",
+            Self::Destination => "destination",
+            Self::DapProfile => "DAP profile",
+            Self::Mode => "sync mode",
+            Self::Confirm => "confirm",
+        }
+    }
+
+    pub fn prev(self) -> Option<Self> {
+        match self {
+            Self::Name => None,
+            Self::Source => Some(Self::Name),
+            Self::Destination => Some(Self::Source),
+            Self::DapProfile => Some(Self::Destination),
+            Self::Mode => Some(Self::DapProfile),
+            Self::Confirm => Some(Self::Mode),
+        }
+    }
+
+    pub fn next(self) -> Option<Self> {
+        match self {
+            Self::Name => Some(Self::Source),
+            Self::Source => Some(Self::Destination),
+            Self::Destination => Some(Self::DapProfile),
+            Self::DapProfile => Some(Self::Mode),
+            Self::Mode => Some(Self::Confirm),
+            Self::Confirm => None,
+        }
+    }
+}
+
+pub struct NewProfileState {
+    pub step: WizardStep,
+    pub name: tui_input::Input,
+    pub source: tui_input::Input,
+    /// Index into [identified DAPs..., manual]. Last item is always "Manual".
+    pub dest_choice: usize,
+    /// Active when dest_choice == identified.len() (manual).
+    pub dest_manual: tui_input::Input,
+    /// Whether the destination text-input is focused (manual mode).
+    pub dest_manual_active: bool,
+    pub dap_choice: usize,
+    pub dap_ids: Vec<String>,
+    pub mode_choice: usize,
+    pub error: Option<String>,
+}
+
+impl NewProfileState {
+    pub fn new(dap_ids: Vec<String>) -> Self {
+        Self {
+            step: WizardStep::Name,
+            name: tui_input::Input::default(),
+            source: tui_input::Input::default(),
+            dest_choice: 0,
+            dest_manual: tui_input::Input::default(),
+            dest_manual_active: false,
+            dap_choice: 0,
+            dap_ids,
+            mode_choice: 0,
+            error: None,
+        }
+    }
+
+    /// Resolved destination string for the current choice + scan.
+    pub fn destination(&self, scan: &crate::scan::ScanResult) -> String {
+        let manual_idx = scan.identified.len();
+        if self.dest_choice == manual_idx {
+            self.dest_manual.value().to_owned()
+        } else if let Some(id) = scan.identified.get(self.dest_choice) {
+            format!("auto:{}", id.dap_id)
+        } else {
+            String::new()
+        }
+    }
+
+    pub fn selected_dap(&self) -> &str {
+        self.dap_ids.get(self.dap_choice).map(String::as_str).unwrap_or("generic")
+    }
+
+    pub fn selected_mode(&self) -> &'static str {
+        if self.mode_choice == 0 { "additive" } else { "mirror" }
     }
 }
 
@@ -206,6 +318,9 @@ pub struct App {
     // Progress view
     pub progress_rx: Option<Receiver<ProgressEvent>>,
     pub progress_state: Option<ProgressState>,
+
+    // New profile wizard
+    pub wizard: Option<NewProfileState>,
 }
 
 impl App {
@@ -239,6 +354,7 @@ impl App {
             diff_entry_filter: EntryFilter::All,
             progress_rx: None,
             progress_state: None,
+            wizard: None,
         })
     }
 
@@ -302,6 +418,14 @@ impl App {
                 ps.handle_event(event);
             }
         }
+    }
+
+    // ── New profile wizard ────────────────────────────────────────────────
+
+    pub fn enter_new_profile(&mut self) {
+        let dap_ids = crate::dap::list().unwrap_or_else(|_| vec!["generic".to_owned()]);
+        self.wizard = Some(NewProfileState::new(dap_ids));
+        self.view = View::NewProfile;
     }
 
     // ── Shared ────────────────────────────────────────────────────────────
