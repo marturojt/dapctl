@@ -64,6 +64,12 @@ Versioning: [SemVer](https://semver.org/).
   existing destinations that were populated before the mtime-preservation
   fix (metadata-only, takes seconds regardless of library size).
 
+### Changed
+- `release.yml`: cross-compile pipeline triggered on `v*` tags. Produces
+  Linux musl static binaries (x86_64 + aarch64) via `cargo-zigbuild`,
+  a macOS universal binary via `lipo`, and a Windows MSVC zip. All
+  artifacts attached to a draft GitHub release with `SHA256SUMS.txt`.
+
 ### Validated
 - End-to-end sync against HiBy R4 microSD (F:\\, exFAT, 116 GB):
   2,108 FLAC files, 75.1 GB transferred and verified.

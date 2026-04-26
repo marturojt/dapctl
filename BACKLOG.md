@@ -98,6 +98,11 @@ workflow is microSD extraction + card reader. See README for rationale.
 - [x] View: `progress` — overall gauge, per-file gauge with filename,
       speed / ETA / counters, auto-scrolling recent-events tail,
       completion banner. Sync runs in background thread via `mpsc`.
+- [ ] View: `new_profile` wizard — 5-step guided profile creation from
+      the TUI: name → source → destination (detected DAPs or manual) →
+      DAP profile selector → mode selector. Writes `.toml` via
+      `toml_edit`, returns to profiles view with new profile selected.
+      Requires `tui-input` crate for text fields.
 - [ ] View: `log` — scroll/filter.
 - [ ] Theme plumbing: respect `NO_COLOR`, load palette from config.
 
@@ -110,7 +115,8 @@ workflow is microSD extraction + card reader. See README for rationale.
 
 ### Release engineering
 
-- [ ] `release.yml`: cross-compile via `cargo-zigbuild`, attach binaries.
+- [x] `release.yml`: Linux musl x86_64+ARM64 via `cargo-zigbuild`,
+      macOS universal (lipo), Windows MSVC. Draft release + SHA256SUMS.
 - [ ] Homebrew tap skeleton.
 - [ ] Scoop bucket skeleton.
 - [ ] AUR `PKGBUILD` (git + bin variants).
