@@ -4,6 +4,37 @@ All notable changes to this project will be documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [SemVer](https://semver.org/).
 
+## [Unreleased] — v0.2 in progress
+
+### Added
+- `Verify::Checksum` mode: streaming blake3 hash (1 MiB buffer) computed
+  during the diff walk. Silent corruption is detected even when file size
+  and mtime match. Falls back to mtime comparison when hashes are not
+  present (i.e. when `verify = "size_mtime"` is configured).
+  `transfer::verify::hash_file()` is now public for reuse by the executor's
+  post-copy verification pass.
+- Tag-based filters in sync profile `[filters]` section, powered by `lofty`:
+  - `include_artists` / `exclude_artists` (case-insensitive)
+  - `include_genres` / `exclude_genres` (case-insensitive)
+  - `min_sample_rate_hz` / `max_sample_rate_hz`
+  - `min_bit_depth`
+  All new fields are optional and default to "no filter". Files that lofty
+  cannot parse (DSD formats, non-audio, corrupt) always pass — they are
+  never silently dropped.
+
+### Tests
+- 4 new unit tests for `Verify::Checksum` classify paths (same hash,
+  different hash same size, no-hash mtime fallback).
+- 2 new integration tests: `diff_checksum_detects_silent_corruption`
+  (same size + mtime, different content → Modified) and
+  `diff_checksum_same_content_is_same` (different mtime, same content →
+  Same). Total: 36 tests.
+- 4 new tag-filter integration tests covering inactive-by-default,
+  graceful degradation on unreadable files, and sample-rate / artist
+  filter activation.
+
+---
+
 ## [0.1.0] — 2026-04-27
 
 ### Added

@@ -24,10 +24,9 @@ requirement N of the MVP.
 
 ---
 
-## Milestone 1 — v0.1 MVP  ·  all 11 requirements  ·  *in progress*
+## Milestone 1 — v0.1 MVP  ·  all 11 requirements  ·  *done (released 2026-04-27)*
 
-Target: first end-to-end sync to the author's FiiO M21 works, reliably,
-on Linux + macOS + Windows.
+Released as `v0.1.0`. Validated: 2,108 FLAC · 75 GB · HiBy R4 microSD.
 
 ### Foundations
 
@@ -69,7 +68,7 @@ workflow is microSD extraction + card reader. See README for rationale.
 - [x] `Plan` serialisable to JSON; `transfer_bytes()`, `eta_secs()`.
 - [x] `diff::diff()` high-level entry point used by CLI and TUI.
 - [x] `dapctl diff <profile>` human summary + entry list + `--json`.
-- [ ] `Verify::Checksum` with `blake3` (v0.2).
+- [x] `Verify::Checksum` with streaming `blake3` (v0.2 — landed on main).
 - [ ] Filesystem-aware path checks: warn on names exceeding DAP limits.
 
 ### Transfer  (req 5, 7, 9)
@@ -98,39 +97,47 @@ workflow is microSD extraction + card reader. See README for rationale.
 - [x] View: `progress` — overall gauge, per-file gauge with filename,
       speed / ETA / counters, auto-scrolling recent-events tail,
       completion banner. Sync runs in background thread via `mpsc`.
-- [ ] View: `new_profile` wizard — 5-step guided profile creation from
-      the TUI: name → source → destination (detected DAPs or manual) →
-      DAP profile selector → mode selector. Writes `.toml` via
-      `toml_edit`, returns to profiles view with new profile selected.
-      Requires `tui-input` crate for text fields.
-- [ ] View: `log` — scroll/filter.
+- [x] View: `new_profile` wizard — 4-step guided creation (name → source →
+      destination with file browser + drive enumeration → mode). Duplicate
+      name detection at step 1. `c` clones a profile pre-filled with
+      `<name>-copy`. Writes `.toml` via `toml_edit`.
+- [x] View: `log` — scrollable JSONL run viewer. j/k / g/G / r reload.
+      Accessible via `l` from profiles or after sync completes.
 - [ ] Theme plumbing: respect `NO_COLOR`, load palette from config.
 
 ### Tests
 
-- [ ] Diff unit tests with fixture libraries under `tests/fixtures/`.
+- [x] 10 unit tests for `diff::compare` (merge-join, FAT32 tolerance, Verify variants).
+- [x] 19 integration tests for the diff pipeline (walker + compare + plan).
+- [x] 4 integration tests for checksum verification (silent corruption detection).
+- [x] 4 integration tests for tag filter graceful degradation.
 - [ ] Manifest resume integration test (kill + restart).
 - [ ] Snapshot tests (`insta`) for TUI views.
-- [ ] CI matrix: Linux x86_64/ARM64, macOS, Windows.
+- [x] CI matrix: Linux x86_64/ARM64, macOS, Windows.
 
 ### Release engineering
 
 - [x] `release.yml`: Linux musl x86_64+ARM64 via `cargo-zigbuild`,
       macOS universal (lipo), Windows MSVC. Draft release + SHA256SUMS.
-- [ ] Homebrew tap skeleton.
+- [x] Homebrew tap: `github.com/marturojt/homebrew-tap` — `brew tap marturojt/tap && brew install dapctl`.
 - [ ] Scoop bucket skeleton.
 - [ ] AUR `PKGBUILD` (git + bin variants).
 
 ---
 
-## Milestone 2 — v0.2 Transcoding & metadata
+## Milestone 2 — v0.2 Transcoding & metadata  ·  *in progress*
 
+- [x] `Verify::Checksum` — streaming blake3 in both diff (per-walk hash) and
+      transfer (post-copy verify). Silent corruption detected even when size
+      and mtime match. Falls back to mtime when hashes not computed.
+- [x] Tag filters (`lofty`) — `include_artists`, `exclude_artists`,
+      `include_genres`, `exclude_genres`, `min_sample_rate_hz`,
+      `max_sample_rate_hz`, `min_bit_depth` in sync profile `[filters]`.
+      Unreadable files always pass (graceful degradation).
 - [ ] ffmpeg detection + capability probe.
 - [ ] Transcode cache under `$XDG_CACHE_HOME/dapctl/transcode/`.
 - [ ] Rule language: `from`/`to`/`params` in sync profile `[transcode]`.
 - [ ] M3U export with path rewrites for the DAP.
-- [ ] Tag reading (`lofty`) for filters: artist / genre / bitdepth / SR.
-- [ ] Post-copy checksum verification toggle.
 
 ## Milestone 3 — v0.3 TUI player + audit + cover fetch
 

@@ -40,12 +40,18 @@ cli, tui
 1. `cli::sync` parses `--profile`, loads the `SyncProfile`.
 2. `dap::load` resolves the referenced `DapProfile`.
 3. `scan` resolves `destination` (e.g. `auto:fiio-m21` → mount point).
-4. `diff::walker` enumerates source and destination in parallel.
-5. `diff::compare` produces a `Plan`.
+4. `diff::walker` enumerates source and destination — applies glob
+   exclude/include filters, then tag filters (artist/genre/sample rate/bit
+   depth via `lofty`) when any are configured, then optionally computes a
+   per-file blake3 hash when `verify = "checksum"`.
+5. `diff::compare` merge-joins the sorted entry lists, classifying each
+   file as New / Modified / Orphan / Same using the configured `Verify`
+   policy (None / SizeMtime / Checksum).
 6. `cli` / `tui` presents the plan; destructive ops require confirmation
    unless `--yes` was passed.
 7. `transfer::executor` executes the plan, updating the manifest and
-   emitting events.
+   emitting events. Post-copy verification (size+mtime or checksum)
+   runs per the profile's `verify` setting.
 8. `logging` writes events to human stream and JSONL stream.
 
 ## Key invariants
