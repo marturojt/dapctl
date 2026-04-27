@@ -9,7 +9,7 @@ use ratatui::Frame;
 use crate::tui::app::{App, FileBrowserState, WizardStep};
 use crate::tui::theme::Theme;
 
-const TOTAL_STEPS: usize = 5;
+const TOTAL_STEPS: usize = 4;
 
 pub fn render(f: &mut Frame, app: &App) {
     let theme = &app.theme;
@@ -65,7 +65,6 @@ pub fn render(f: &mut Frame, app: &App) {
             &wiz.source_browser,
         ),
         WizardStep::Destination => render_destination(f, app, content_area, footer_area),
-        WizardStep::DapProfile => render_dap(f, app, content_area, footer_area),
         WizardStep::Mode => render_mode(f, app, content_area, footer_area),
         WizardStep::Confirm => render_confirm(f, app, content_area, footer_area),
     }
@@ -117,9 +116,14 @@ fn render_name(f: &mut Frame, app: &App, content: Rect, footer: Rect) {
     let visual = wiz.name.visual_cursor().min(input_width.saturating_sub(1));
     f.set_cursor_position((input_area.x + 1 + visual as u16, input_area.y + 1));
 
+    let hint_text = if let Some(ref src) = wiz.cloned_from {
+        format!("  cloning from '{src}' — change the name then press enter")
+    } else {
+        "  A short identifier (e.g. hiby-r4-flac). Used as the filename.".to_owned()
+    };
     f.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            "  A short identifier (e.g. hiby-r4-flac). Used as the filename.",
+            hint_text,
             Style::default().fg(theme.muted),
         ))),
         hint_area,
@@ -235,47 +239,6 @@ fn render_destination(f: &mut Frame, app: &App, content: Rect, footer: Rect) {
         .highlight_symbol("▶");
 
     let mut state = ListState::default().with_selected(Some(wiz.dest_choice));
-    f.render_stateful_widget(list, list_area, &mut state);
-    render_list_footer(f, app, footer);
-}
-
-fn render_dap(f: &mut Frame, app: &App, content: Rect, footer: Rect) {
-    let theme = &app.theme;
-    let wiz = app.wizard.as_ref().unwrap();
-
-    let [_, heading_area, _, list_area] = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Length(1),
-        Constraint::Length(1),
-        Constraint::Fill(1),
-    ])
-    .areas(content);
-
-    f.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            "  DAP profile",
-            Style::default()
-                .fg(theme.fg)
-                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
-        ))),
-        heading_area,
-    );
-
-    let items: Vec<ListItem> = wiz.dap_ids.iter()
-        .map(|id| ListItem::new(Line::from(Span::raw(format!("  {id}")))))
-        .collect();
-
-    let list = List::new(items)
-        .style(Style::default().fg(theme.fg).bg(theme.bg))
-        .highlight_style(
-            Style::default()
-                .fg(theme.sel_fg)
-                .bg(theme.sel_bg)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol("▶");
-
-    let mut state = ListState::default().with_selected(Some(wiz.dap_choice));
     f.render_stateful_widget(list, list_area, &mut state);
     render_list_footer(f, app, footer);
 }

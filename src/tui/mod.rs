@@ -8,7 +8,7 @@ use std::io::{self, stdout};
 use std::sync::mpsc;
 use std::time::Duration;
 
-use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
@@ -58,6 +58,10 @@ fn event_loop(
         if event::poll(Duration::from_millis(100))? {
             let ev = event::read()?;
             if let Event::Key(key) = ev {
+                // Ignore OS key-repeat events; only act on the initial Press.
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
                 if app.view == View::NewProfile {
                     handle_wizard_key(app, key);
                 } else {
@@ -124,6 +128,13 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
         }
         (KeyCode::Char('n'), _) if app.view == View::Profiles => {
             app.enter_new_profile();
+        }
+        (KeyCode::Char('c'), _) if app.view == View::Profiles => {
+            if app.profiles.is_empty() {
+                app.set_flash("no profiles to clone");
+            } else {
+                app.enter_clone_profile();
+            }
         }
 
         // ── Diff ─────────────────────────────────────────────────────────
@@ -258,12 +269,22 @@ fn handle_wizard_key(app: &mut App, key: crossterm::event::KeyEvent) {
         // ── Name (text input) ─────────────────────────────────────────────
         WizardStep::Name => {
             if key.code == K::Enter {
-                let empty = app.wizard.as_ref().unwrap().name.value().trim().is_empty();
-                if empty {
+                let name = app.wizard.as_ref().unwrap().name.value().trim().to_owned();
+                if name.is_empty() {
                     app.wizard.as_mut().unwrap().error = Some("name cannot be empty".to_owned());
                 } else {
-                    app.wizard.as_mut().unwrap().error = None;
-                    app.wizard.as_mut().unwrap().step = WizardStep::Source;
+                    let filename = views::new_profile::sanitize_name(&name);
+                    let duplicate = crate::config::profiles_dir()
+                        .map(|dir| dir.join(format!("{filename}.toml")).exists())
+                        .unwrap_or(false);
+                    if duplicate {
+                        app.wizard.as_mut().unwrap().error = Some(
+                            format!("'{filename}.toml' already exists — choose a different name"),
+                        );
+                    } else {
+                        app.wizard.as_mut().unwrap().error = None;
+                        app.wizard.as_mut().unwrap().step = WizardStep::Source;
+                    }
                 }
             } else {
                 app.wizard.as_mut().unwrap().name
@@ -303,7 +324,7 @@ fn handle_wizard_key(app: &mut App, key: crossterm::event::KeyEvent) {
                     K::Enter | K::Char('l') | K::Right
                         if browser.enter_selected() => {
                         wiz.error = None;
-                        wiz.step = WizardStep::DapProfile;
+                        wiz.step = WizardStep::Mode;
                     }
                     K::Enter | K::Char('l') | K::Right => {}
                     _ => {}
@@ -316,23 +337,11 @@ fn handle_wizard_key(app: &mut App, key: crossterm::event::KeyEvent) {
                     K::Char('k') | K::Up   => wiz.dest_choice = wiz.dest_choice.saturating_sub(1),
                     K::Enter if wiz.dest_choice < manual_idx => {
                         wiz.error = None;
-                        wiz.step = WizardStep::DapProfile;
+                        wiz.step = WizardStep::Mode;
                     }
                     K::Enter => {} // dest_choice == manual_idx → browser active on next frame
                     _ => {}
                 }
-            }
-        }
-
-        // ── DAP profile list ──────────────────────────────────────────────
-        WizardStep::DapProfile => {
-            let wiz = app.wizard.as_mut().unwrap();
-            let n = wiz.dap_ids.len().max(1);
-            match key.code {
-                K::Char('j') | K::Down => wiz.dap_choice = (wiz.dap_choice + 1).min(n - 1),
-                K::Char('k') | K::Up   => wiz.dap_choice = wiz.dap_choice.saturating_sub(1),
-                K::Enter => wiz.step = WizardStep::Mode,
-                _ => {}
             }
         }
 
@@ -389,19 +398,23 @@ fn write_new_profile(app: &App) -> anyhow::Result<String> {
     if source.is_empty()      { anyhow::bail!("source is empty"); }
     if destination.is_empty() { anyhow::bail!("destination is empty"); }
 
-    let filename = sanitize_filename(&name);
+    let filename = views::new_profile::sanitize_name(&name);
     let dir = crate::config::profiles_dir()?;
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(format!("{filename}.toml"));
     if path.exists() { anyhow::bail!("'{filename}.toml' already exists"); }
+
+    // Escape backslashes for TOML basic strings (Windows paths).
+    let source_toml      = source.replace('\\', "\\\\");
+    let destination_toml = destination.replace('\\', "\\\\");
 
     std::fs::write(&path, format!(
         "schema_version = 1\n\
          \n\
          [profile]\n\
          name        = \"{name}\"\n\
-         source      = \"{source}\"\n\
-         destination = \"{destination}\"\n\
+         source      = \"{source_toml}\"\n\
+         destination = \"{destination_toml}\"\n\
          dap_profile = \"{dap}\"\n\
          mode        = \"{mode}\"\n\
          \n\
@@ -410,19 +423,11 @@ fn write_new_profile(app: &App) -> anyhow::Result<String> {
          exclude_globs = []\n\
          \n\
          [transfer]\n\
-         verify          = \"size+mtime\"\n\
+         verify          = \"size_mtime\"\n\
          dry_run_default = true\n\
          parallelism     = 4\n"
     ))?;
     Ok(name)
-}
-
-fn sanitize_filename(s: &str) -> String {
-    s.chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
-        .collect::<String>()
-        .trim_matches('-')
-        .to_lowercase()
 }
 
 // ── Diff computation ──────────────────────────────────────────────────────────

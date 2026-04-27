@@ -375,10 +375,12 @@ fn tmp_path(dst: &Utf8Path) -> Utf8PathBuf {
 
 fn truncate_path(p: &Utf8Path, max: usize) -> String {
     let s = p.as_str();
-    if s.len() <= max {
+    let chars: Vec<char> = s.chars().collect();
+    if chars.len() <= max {
         return s.to_owned();
     }
-    format!("…{}", &s[s.len().saturating_sub(max - 1)..])
+    let tail: String = chars[chars.len().saturating_sub(max.saturating_sub(1))..].iter().collect();
+    format!("…{tail}")
 }
 
 fn dry_run_stats(plan: &Plan, mode: SyncMode) -> Stats {

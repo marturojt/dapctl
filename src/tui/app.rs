@@ -85,7 +85,6 @@ pub enum WizardStep {
     Name,
     Source,
     Destination,
-    DapProfile,
     Mode,
     Confirm,
 }
@@ -96,9 +95,8 @@ impl WizardStep {
             Self::Name => 1,
             Self::Source => 2,
             Self::Destination => 3,
-            Self::DapProfile => 4,
-            Self::Mode => 5,
-            Self::Confirm => 6,
+            Self::Mode => 4,
+            Self::Confirm => 5,
         }
     }
 
@@ -107,7 +105,6 @@ impl WizardStep {
             Self::Name => "profile name",
             Self::Source => "source path",
             Self::Destination => "destination",
-            Self::DapProfile => "DAP profile",
             Self::Mode => "sync mode",
             Self::Confirm => "confirm",
         }
@@ -118,8 +115,7 @@ impl WizardStep {
             Self::Name => None,
             Self::Source => Some(Self::Name),
             Self::Destination => Some(Self::Source),
-            Self::DapProfile => Some(Self::Destination),
-            Self::Mode => Some(Self::DapProfile),
+            Self::Mode => Some(Self::Destination),
             Self::Confirm => Some(Self::Mode),
         }
     }
@@ -128,8 +124,7 @@ impl WizardStep {
         match self {
             Self::Name => Some(Self::Source),
             Self::Source => Some(Self::Destination),
-            Self::Destination => Some(Self::DapProfile),
-            Self::DapProfile => Some(Self::Mode),
+            Self::Destination => Some(Self::Mode),
             Self::Mode => Some(Self::Confirm),
             Self::Confirm => None,
         }
@@ -289,14 +284,14 @@ pub struct NewProfileState {
     pub dest_choice: usize,
     /// Active when the user chose "Browse…" in the destination list.
     pub dest_browser: Option<FileBrowserState>,
-    pub dap_choice: usize,
-    pub dap_ids: Vec<String>,
     pub mode_choice: usize,
     pub error: Option<String>,
+    /// Set when the wizard was opened via "clone" — shows a hint in the Name step.
+    pub cloned_from: Option<String>,
 }
 
 impl NewProfileState {
-    pub fn new(dap_ids: Vec<String>, scan: &crate::scan::ScanResult) -> Self {
+    pub fn new(scan: &crate::scan::ScanResult) -> Self {
         // Source: start at virtual drives root so the user can pick any drive.
         let source_browser = FileBrowserState::drives_root();
 
@@ -314,10 +309,63 @@ impl NewProfileState {
             source_browser,
             dest_choice: 0,
             dest_browser: Some(dest_browser),
-            dap_choice: 0,
-            dap_ids,
             mode_choice: 0,
             error: None,
+            cloned_from: None,
+        }
+    }
+
+    /// Build a wizard state pre-populated from `profile`, used for cloning.
+    pub fn from_clone(
+        profile: &crate::config::SyncProfile,
+        scan: &crate::scan::ScanResult,
+    ) -> Self {
+        let original_name = profile.profile.name.clone();
+
+        // Source browser at the existing source directory.
+        let src_path = camino::Utf8PathBuf::from(&profile.profile.source);
+        let source_browser = if src_path.exists() {
+            FileBrowserState::new(src_path)
+        } else {
+            FileBrowserState::drives_root()
+        };
+
+        // Destination: auto:dap_id → find index in identified; otherwise browse.
+        let manual_idx = scan.identified.len();
+        let dest = &profile.profile.destination;
+        let (dest_choice, dest_browser) = if let Some(dap_id) = dest.strip_prefix("auto:") {
+            let idx = scan.identified.iter().position(|id| id.dap_id == dap_id)
+                .unwrap_or(manual_idx);
+            let browser = scan.identified.first()
+                .map(|id| FileBrowserState::new(camino::Utf8PathBuf::from(&id.mount.mount_point)))
+                .unwrap_or_else(FileBrowserState::drives_root);
+            (idx, Some(browser))
+        } else {
+            let dest_path = camino::Utf8PathBuf::from(dest.as_str());
+            let browser = if dest_path.exists() {
+                FileBrowserState::new(dest_path)
+            } else {
+                FileBrowserState::drives_root()
+            };
+            (manual_idx, Some(browser))
+        };
+
+        let mode_choice = match profile.profile.mode {
+            Mode::Mirror => 1,
+            _ => 0,
+        };
+
+        let suggested_name: tui_input::Input = format!("{original_name}-copy").into();
+
+        Self {
+            step: WizardStep::Name,
+            name: suggested_name,
+            source_browser,
+            dest_choice,
+            dest_browser,
+            mode_choice,
+            error: None,
+            cloned_from: Some(original_name),
         }
     }
 
@@ -339,8 +387,8 @@ impl NewProfileState {
         }
     }
 
-    pub fn selected_dap(&self) -> &str {
-        self.dap_ids.get(self.dap_choice).map(String::as_str).unwrap_or("generic")
+    pub fn selected_dap(&self) -> &'static str {
+        "generic"
     }
 
     pub fn selected_mode(&self) -> &'static str {
@@ -583,8 +631,14 @@ impl App {
     // ── New profile wizard ────────────────────────────────────────────────
 
     pub fn enter_new_profile(&mut self) {
-        let dap_ids = crate::dap::list().unwrap_or_else(|_| vec!["generic".to_owned()]);
-        self.wizard = Some(NewProfileState::new(dap_ids, &self.scan));
+        self.wizard = Some(NewProfileState::new(&self.scan));
+        self.view = View::NewProfile;
+    }
+
+    pub fn enter_clone_profile(&mut self) {
+        let Some((_, profile)) = self.profiles.get(self.profile_idx) else { return };
+        let profile = profile.clone();
+        self.wizard = Some(NewProfileState::from_clone(&profile, &self.scan));
         self.view = View::NewProfile;
     }
 
