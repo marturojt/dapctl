@@ -31,9 +31,10 @@ pub fn diff(
 
     let exclude = profile.build_exclude_set()?;
     let include = profile.build_include_set()?;
+    let compute_hashes = matches!(profile.sync.transfer.verify, crate::config::Verify::Checksum);
 
-    let src_entries = walker::walk(source, &exclude, include.as_ref())?;
-    let dst_entries = walker::walk(destination, &exclude, None)?;
+    let src_entries = walker::walk(source, &exclude, include.as_ref(), compute_hashes)?;
+    let dst_entries = walker::walk(destination, &exclude, None, compute_hashes)?;
 
     tracing::info!(
         event = "scan_done",

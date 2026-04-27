@@ -75,13 +75,21 @@ pub fn compare(src: &[WalkEntry], dst: &[WalkEntry], verify: Verify) -> Plan {
 fn classify(src: &WalkEntry, dst: &WalkEntry, verify: Verify) -> EntryKind {
     match verify {
         Verify::None => EntryKind::Same,
-        Verify::SizeMtime | Verify::Checksum => {
-            // Checksum falls back to size+mtime until Verify::Checksum
-            // with blake3 is implemented in transfer::verify.
-            if same_size_mtime(src, dst) {
-                EntryKind::Same
-            } else {
-                EntryKind::Modified
+        Verify::SizeMtime => {
+            if same_size_mtime(src, dst) { EntryKind::Same } else { EntryKind::Modified }
+        }
+        Verify::Checksum => {
+            if src.size != dst.size {
+                return EntryKind::Modified;
+            }
+            match (src.hash, dst.hash) {
+                (Some(sh), Some(dh)) => {
+                    if sh == dh { EntryKind::Same } else { EntryKind::Modified }
+                }
+                // Hashes absent (compute_hashes was false): fall back to mtime.
+                _ => {
+                    if same_mtime(src, dst) { EntryKind::Same } else { EntryKind::Modified }
+                }
             }
         }
     }
@@ -91,6 +99,10 @@ fn same_size_mtime(src: &WalkEntry, dst: &WalkEntry) -> bool {
     if src.size != dst.size {
         return false;
     }
+    same_mtime(src, dst)
+}
+
+fn same_mtime(src: &WalkEntry, dst: &WalkEntry) -> bool {
     (src.mtime_ns - dst.mtime_ns).abs() <= MTIME_TOLERANCE_NS
 }
 
@@ -102,7 +114,12 @@ mod tests {
     use camino::Utf8PathBuf;
 
     fn entry(path: &str, size: u64, mtime_ns: i128) -> WalkEntry {
-        WalkEntry { rel: Utf8PathBuf::from(path), size, mtime_ns }
+        WalkEntry { rel: Utf8PathBuf::from(path), size, mtime_ns, hash: None }
+    }
+
+    fn entry_hashed(path: &str, size: u64, data: &[u8]) -> WalkEntry {
+        let hash = Some(blake3::hash(data));
+        WalkEntry { rel: Utf8PathBuf::from(path), size, mtime_ns: 0, hash }
     }
 
     const T: i128 = 1_000_000_000_000; // arbitrary base timestamp
@@ -190,6 +207,33 @@ mod tests {
         assert_eq!(plan.count(EntryKind::Modified), 1, "modified");
         assert_eq!(plan.count(EntryKind::Orphan),   1, "orphan");
         assert_eq!(plan.count(EntryKind::Same),     1, "same");
+    }
+
+    #[test]
+    fn checksum_same_hash_is_same() {
+        let data = b"identical content";
+        let src = vec![entry_hashed("a.flac", data.len() as u64, data)];
+        let dst = vec![entry_hashed("a.flac", data.len() as u64, data)];
+        let plan = compare(&src, &dst, Verify::Checksum);
+        assert_eq!(plan.count(EntryKind::Same), 1);
+        assert_eq!(plan.count(EntryKind::Modified), 0);
+    }
+
+    #[test]
+    fn checksum_different_hash_same_size_is_modified() {
+        let src = vec![entry_hashed("a.flac", 10, b"source data")];
+        let dst = vec![entry_hashed("a.flac", 10, b"dest__data")];
+        let plan = compare(&src, &dst, Verify::Checksum);
+        assert_eq!(plan.count(EntryKind::Modified), 1);
+    }
+
+    #[test]
+    fn checksum_no_hashes_falls_back_to_mtime() {
+        // Without hashes, Verify::Checksum behaves like SizeMtime.
+        let src = vec![entry("a.flac", 100, T + 5_000_000_000)];
+        let dst = vec![entry("a.flac", 100, T)];
+        let plan = compare(&src, &dst, Verify::Checksum);
+        assert_eq!(plan.count(EntryKind::Modified), 1);
     }
 
     #[test]

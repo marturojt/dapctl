@@ -3,6 +3,8 @@ use camino::{Utf8Path, Utf8PathBuf};
 use globset::GlobSet;
 use walkdir::WalkDir;
 
+use crate::transfer::verify::hash_file;
+
 #[derive(Debug, Clone)]
 pub struct Entry {
     /// Path relative to the walk root, with `/` separators (platform-independent).
@@ -10,15 +12,21 @@ pub struct Entry {
     pub size: u64,
     /// Modification time as nanoseconds since UNIX epoch. 0 if unavailable.
     pub mtime_ns: i128,
+    /// blake3 hash, populated only when the caller requests `compute_hashes = true`.
+    pub hash: Option<blake3::Hash>,
 }
 
 /// Walk `root` recursively, applying exclusion and inclusion globs.
+///
+/// When `compute_hashes` is `true`, each entry's blake3 hash is computed while
+/// walking; set it only for `Verify::Checksum` diffs to avoid unnecessary I/O.
 ///
 /// Returns entries sorted by `rel` path for O(n) merge-join in `compare`.
 pub fn walk(
     root: &Utf8Path,
     exclude: &GlobSet,
     include: Option<&GlobSet>,
+    compute_hashes: bool,
 ) -> anyhow::Result<Vec<Entry>> {
     if !root.exists() {
         // Destination may not exist yet on first sync — return empty.
@@ -59,10 +67,18 @@ pub fn walk(
             .map(|d| d.as_nanos() as i128)
             .unwrap_or(0);
 
+        let abs_utf8 = root.join(&rel);
+        let hash = if compute_hashes {
+            hash_file(&abs_utf8).ok()
+        } else {
+            None
+        };
+
         entries.push(Entry {
             rel,
             size: meta.len(),
             mtime_ns,
+            hash,
         });
     }
 

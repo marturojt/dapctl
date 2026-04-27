@@ -34,7 +34,12 @@ fn set_mtime(dir: &TempDir, rel: &str, secs_since_epoch: u64) {
 
 fn walk_dir(dir: &TempDir) -> Vec<dapctl::diff::walker::Entry> {
     let root = Utf8PathBuf::from_path_buf(dir.path().to_owned()).unwrap();
-    walk(&root, &empty_globset(), None).unwrap()
+    walk(&root, &empty_globset(), None, false).unwrap()
+}
+
+fn walk_dir_hashed(dir: &TempDir) -> Vec<dapctl::diff::walker::Entry> {
+    let root = Utf8PathBuf::from_path_buf(dir.path().to_owned()).unwrap();
+    walk(&root, &empty_globset(), None, true).unwrap()
 }
 
 // ── Walker tests ──────────────────────────────────────────────────────────────
@@ -49,7 +54,7 @@ fn walker_empty_dir_returns_empty() {
 #[test]
 fn walker_missing_dir_returns_empty() {
     let root = Utf8PathBuf::from("/nonexistent/path/that/does/not/exist");
-    let entries = walk(&root, &empty_globset(), None).unwrap();
+    let entries = walk(&root, &empty_globset(), None, false).unwrap();
     assert!(entries.is_empty());
 }
 
@@ -95,7 +100,7 @@ fn walker_exclude_glob_skips_matching_files() {
         b.build().unwrap()
     };
     let root = Utf8PathBuf::from_path_buf(dir.path().to_owned()).unwrap();
-    let entries = walk(&root, &exclude, None).unwrap();
+    let entries = walk(&root, &exclude, None, false).unwrap();
 
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].rel.as_str(), "music/track.flac");
@@ -114,7 +119,7 @@ fn walker_include_glob_filters_to_matching_only() {
         b.build().unwrap()
     };
     let root = Utf8PathBuf::from_path_buf(dir.path().to_owned()).unwrap();
-    let entries = walk(&root, &empty_globset(), Some(&include)).unwrap();
+    let entries = walk(&root, &empty_globset(), Some(&include), false).unwrap();
 
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].rel.as_str(), "track.flac");
@@ -288,6 +293,49 @@ fn diff_mixed_scenario() {
     assert_eq!(plan.count(EntryKind::Orphan),   1, "orphan");
     assert_eq!(plan.count(EntryKind::Same),     1, "same");
     assert_eq!(plan.transfer_bytes(), 200 + 300, "transfer bytes = modified + new");
+}
+
+#[test]
+fn diff_checksum_detects_silent_corruption() {
+    // Same size, same mtime, DIFFERENT content — size+mtime would say Same,
+    // but checksum must detect Modified.
+    let src = TempDir::new().unwrap();
+    let dst = TempDir::new().unwrap();
+    write_file(&src, "track.flac", b"original audio data");
+    write_file(&dst, "track.flac", b"corrupted_audio!!!!"); // same length
+    set_mtime(&src, "track.flac", 1_700_000_000);
+    set_mtime(&dst, "track.flac", 1_700_000_000);
+
+    let se = walk_dir_hashed(&src);
+    let de = walk_dir_hashed(&dst);
+
+    // Verify hashes were computed.
+    assert!(se[0].hash.is_some(), "src hash should be populated");
+    assert!(de[0].hash.is_some(), "dst hash should be populated");
+    assert_ne!(se[0].hash, de[0].hash, "hashes should differ for different content");
+
+    let plan = compare(&se, &de, Verify::Checksum);
+    assert_eq!(plan.count(EntryKind::Modified), 1, "checksum must detect content mismatch");
+    assert_eq!(plan.count(EntryKind::Same), 0);
+}
+
+#[test]
+fn diff_checksum_same_content_is_same() {
+    let src = TempDir::new().unwrap();
+    let dst = TempDir::new().unwrap();
+    let data = b"identical audio data";
+    write_file(&src, "track.flac", data);
+    write_file(&dst, "track.flac", data);
+    set_mtime(&src, "track.flac", 1_700_000_000);
+    set_mtime(&dst, "track.flac", 1_700_000_100); // different mtime — SizeMtime would say Modified
+
+    let se = walk_dir_hashed(&src);
+    let de = walk_dir_hashed(&dst);
+    let plan = compare(&se, &de, Verify::Checksum);
+
+    // Checksum trusts the content over mtime.
+    assert_eq!(plan.count(EntryKind::Same), 1, "identical content → Same even with mtime drift");
+    assert_eq!(plan.count(EntryKind::Modified), 0);
 }
 
 #[test]
