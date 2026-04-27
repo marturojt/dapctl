@@ -4,7 +4,7 @@ All notable changes to this project will be documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [0.1.0] — 2026-04-27
 
 ### Added
 - Repository scaffolding: Cargo manifest, module layout (`cli`, `config`,
@@ -70,10 +70,37 @@ Versioning: [SemVer](https://semver.org/).
   a macOS universal binary via `lipo`, and a Windows MSVC zip. All
   artifacts attached to a draft GitHub release with `SHA256SUMS.txt`.
 
+### Added (TUI)
+- TUI new-profile wizard: 4-step guided creation (name → source →
+  destination → mode). File browser with drive enumeration on Windows,
+  duplicate name detection at step 1. `c` clones a selected profile
+  pre-filled with suggested `<name>-copy`.
+- TUI log view: scrollable display of the most recent JSONL run.
+  j/k scroll, `g`/`G` top/bottom, `r` reload. Accessible via `l` from
+  profiles or from progress view after sync completes.
+- Key-repeat fix: only `KeyEventKind::Press` events are processed;
+  OS repeat events are discarded, eliminating runaway scrolling.
+
+### Fixed
+- Wizard TOML writer: escape backslashes in Windows paths
+  (`D:\Music` → `D:\\Music`) — unescaped paths caused silent parse
+  failure and profiles never appeared in the list.
+- `transfer::executor::truncate_path`: slice by char index instead of
+  byte offset — panicked on Unicode characters such as U+2019 (`'`)
+  in album/folder names.
+- Wizard `verify` field: was written as `"size+mtime"` but the schema
+  expects `"size_mtime"` (snake_case) — profiles were silently dropped.
+
+### Tests
+- 10 unit tests for `diff::compare` (merge-join logic, FAT32 mtime
+  tolerance, `Verify::None` behaviour).
+- 17 integration tests for the diff pipeline (`walker` + `compare`):
+  glob filtering, Unicode filenames, mtime alignment, idempotency.
+
 ### Validated
 - End-to-end sync against HiBy R4 microSD (F:\\, exFAT, 116 GB):
   2,108 FLAC files, 75.1 GB transferred and verified.
 - Mirror mode: orphan detection and deletion confirmed.
 - Re-run idempotency: 2,108 unchanged, 0 copied, 0 failed.
 
-[Unreleased]: https://github.com/marturojt/dapctl/compare/HEAD...HEAD
+[0.1.0]: https://github.com/marturojt/dapctl/releases/tag/v0.1.0
