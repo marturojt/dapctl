@@ -11,6 +11,18 @@ mode         = "mirror"          # additive | mirror | selective
 include_globs = ["**/*.flac", "**/*.dsf", "**/*.mp3"]
 exclude_globs = ["**/demo/**", "**/_wip/**"]
 
+# Tag-based filters (all optional; read audio headers via lofty).
+# Unreadable files (e.g. non-audio, DSD formats lofty doesn't parse)
+# always pass — they are never silently dropped.
+#
+# include_artists = ["Tool", "Radiohead"]   # empty = accept all artists
+# exclude_artists = ["Nickelback"]
+# include_genres  = ["Metal", "Jazz"]       # empty = accept all genres
+# exclude_genres  = []
+# min_sample_rate_hz = 44100               # skip files below this sample rate
+# max_sample_rate_hz = 768000
+# min_bit_depth = 16                       # skip files below this bit depth
+
 [transfer]
 verify          = "size_mtime"   # none | size_mtime | checksum
 dry_run_default = true           # enforced when mode = "mirror"

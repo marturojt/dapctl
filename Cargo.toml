@@ -37,6 +37,7 @@ globset             = "0.4"
 ulid                = { version = "1", features = ["serde"] }
 time                = { version = "0.3", features = ["serde", "formatting", "macros"] }
 sysinfo             = "0.32"
+lofty               = "0.22"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }

@@ -36,6 +36,30 @@ pub struct Filters {
     pub include_globs: Vec<String>,
     #[serde(default)]
     pub exclude_globs: Vec<String>,
+
+    // ── Tag-based filters (all optional; require lofty to read audio headers) ──
+    /// Include only files whose artist tag matches one of these (case-insensitive).
+    /// Empty = accept all artists.
+    #[serde(default)]
+    pub include_artists: Vec<String>,
+    /// Exclude files whose artist tag matches any of these (case-insensitive).
+    #[serde(default)]
+    pub exclude_artists: Vec<String>,
+    /// Include only files whose genre tag matches one of these (case-insensitive).
+    #[serde(default)]
+    pub include_genres: Vec<String>,
+    /// Exclude files whose genre tag matches any of these (case-insensitive).
+    #[serde(default)]
+    pub exclude_genres: Vec<String>,
+    /// Skip files with sample rate strictly below this value (Hz).
+    #[serde(default)]
+    pub min_sample_rate_hz: Option<u32>,
+    /// Skip files with sample rate strictly above this value (Hz).
+    #[serde(default)]
+    pub max_sample_rate_hz: Option<u32>,
+    /// Skip files with bit depth strictly below this value.
+    #[serde(default)]
+    pub min_bit_depth: Option<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
