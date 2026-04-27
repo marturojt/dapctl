@@ -529,6 +529,38 @@ pub struct App {
 
     // New profile wizard
     pub wizard: Option<NewProfileState>,
+
+    // Log view
+    pub log_lines: Vec<LogEntry>,
+    pub log_scroll: usize,
+    pub log_run_id: String,
+}
+
+/// A single parsed JSONL log entry for display.
+pub struct LogEntry {
+    pub time: String,
+    pub level: LogLevel,
+    pub event: String,
+    pub detail: String,
+}
+
+impl LogEntry {
+    pub fn level_str(&self) -> &'static str {
+        match self.level {
+            LogLevel::Info  => "info",
+            LogLevel::Warn  => "warn",
+            LogLevel::Error => "error",
+            LogLevel::Other => "?",
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum LogLevel {
+    Info,
+    Warn,
+    Error,
+    Other,
 }
 
 impl App {
@@ -563,6 +595,9 @@ impl App {
             progress_rx: None,
             progress_state: None,
             wizard: None,
+            log_lines: Vec::new(),
+            log_scroll: 0,
+            log_run_id: String::new(),
         })
     }
 
@@ -642,6 +677,51 @@ impl App {
         self.view = View::NewProfile;
     }
 
+    // ── Log view ─────────────────────────────────────────────────────────
+
+    pub fn load_log(&mut self) {
+        let Some(path) = latest_jsonl_path() else {
+            self.log_lines = vec![LogEntry {
+                time: String::new(),
+                level: LogLevel::Warn,
+                event: "no runs found".into(),
+                detail: String::new(),
+            }];
+            self.log_run_id = String::new();
+            self.log_scroll = 0;
+            return;
+        };
+
+        let content = match std::fs::read_to_string(&path) {
+            Ok(s) => s,
+            Err(e) => {
+                self.log_lines = vec![LogEntry {
+                    time: String::new(),
+                    level: LogLevel::Error,
+                    event: format!("cannot read log: {e}"),
+                    detail: String::new(),
+                }];
+                return;
+            }
+        };
+
+        self.log_run_id = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_owned();
+
+        self.log_lines = content
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(parse_jsonl_line)
+            .collect();
+
+        // Start scrolled to the bottom.
+        self.log_scroll = self.log_lines.len().saturating_sub(1);
+        self.view = View::Log;
+    }
+
     // ── Shared ────────────────────────────────────────────────────────────
 
     pub fn set_flash(&mut self, msg: impl Into<String>) {
@@ -657,4 +737,63 @@ impl App {
             }
         }
     }
+}
+
+// ── Log helpers ───────────────────────────────────────────────────────────────
+
+fn latest_jsonl_path() -> Option<std::path::PathBuf> {
+    let dirs = directories::ProjectDirs::from("", "", "dapctl")?;
+    let runs_dir = dirs.data_local_dir().join("runs");
+    let mut files: Vec<_> = std::fs::read_dir(&runs_dir).ok()?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("jsonl"))
+        .collect();
+    files.sort_by_key(|e| e.metadata().and_then(|m| m.modified()).ok());
+    files.last().map(|e| e.path())
+}
+
+fn parse_jsonl_line(line: &str) -> LogEntry {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+        return LogEntry {
+            time: String::new(),
+            level: LogLevel::Other,
+            event: line.to_owned(),
+            detail: String::new(),
+        };
+    };
+
+    let time = v["ts"].as_str().unwrap_or("").to_owned();
+    // Keep only HH:MM:SS from the RFC3339 timestamp.
+    let time = time.get(11..19).unwrap_or(&time).to_owned();
+
+    let level = match v["level"].as_str().unwrap_or("") {
+        "info"  => LogLevel::Info,
+        "warn"  => LogLevel::Warn,
+        "error" => LogLevel::Error,
+        _       => LogLevel::Other,
+    };
+
+    let fields = v["fields"].as_object();
+    let event = fields
+        .and_then(|f| f.get("event"))
+        .and_then(|e| e.as_str())
+        .unwrap_or("")
+        .to_owned();
+
+    // Build a compact detail string from the remaining fields.
+    let detail = fields.map(|f| {
+        f.iter()
+            .filter(|(k, _)| k.as_str() != "event")
+            .map(|(k, val)| {
+                let v = match val {
+                    serde_json::Value::String(s) => s.clone(),
+                    other => other.to_string(),
+                };
+                format!("{k}={v}")
+            })
+            .collect::<Vec<_>>()
+            .join("  ")
+    }).unwrap_or_default();
+
+    LogEntry { time, level, event, detail }
 }

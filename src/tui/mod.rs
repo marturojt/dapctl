@@ -82,7 +82,7 @@ fn draw(f: &mut ratatui::Frame, app: &App) {
         View::Profiles => views::profiles::render(f, app),
         View::Diff => views::diff::render(f, app),
         View::Progress => views::progress::render(f, app),
-        View::Log => views::placeholder::render(f, app),
+        View::Log => views::log::render(f, app),
         View::NewProfile => views::new_profile::render(f, app),
     }
 }
@@ -96,7 +96,6 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
         (KeyCode::Char('q'), _) => match app.view {
             View::Profiles => app.should_quit = true,
             View::Progress => {
-                // Only allow quit once the sync is done.
                 let done = app.progress_state.as_ref().is_some_and(|p| p.finished);
                 if done { app.should_quit = true; }
             }
@@ -105,6 +104,10 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
                 app.confirm_sync = false;
             }
         },
+        (KeyCode::Char('l'), _) if app.view == View::Progress => {
+            let done = app.progress_state.as_ref().is_some_and(|p| p.finished);
+            if done { app.load_log(); }
+        }
 
         (KeyCode::Esc, _) if app.view != View::Progress => {
             app.view = View::Profiles;
@@ -129,12 +132,33 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
         (KeyCode::Char('n'), _) if app.view == View::Profiles => {
             app.enter_new_profile();
         }
+        (KeyCode::Char('l'), _) if app.view == View::Profiles => {
+            app.load_log();
+        }
         (KeyCode::Char('c'), _) if app.view == View::Profiles => {
             if app.profiles.is_empty() {
                 app.set_flash("no profiles to clone");
             } else {
                 app.enter_clone_profile();
             }
+        }
+
+        // ── Log ──────────────────────────────────────────────────────────
+        (KeyCode::Char('j') | KeyCode::Down, _) if app.view == View::Log => {
+            let max = app.log_lines.len().saturating_sub(1);
+            app.log_scroll = (app.log_scroll + 1).min(max);
+        }
+        (KeyCode::Char('k') | KeyCode::Up, _) if app.view == View::Log => {
+            app.log_scroll = app.log_scroll.saturating_sub(1);
+        }
+        (KeyCode::Char('g'), _) if app.view == View::Log => {
+            app.log_scroll = 0;
+        }
+        (KeyCode::Char('G'), _) if app.view == View::Log => {
+            app.log_scroll = app.log_lines.len().saturating_sub(1);
+        }
+        (KeyCode::Char('r'), _) if app.view == View::Log => {
+            app.load_log();
         }
 
         // ── Diff ─────────────────────────────────────────────────────────

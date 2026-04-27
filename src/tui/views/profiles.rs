@@ -60,6 +60,8 @@ pub fn render(f: &mut Frame, app: &App) {
             Span::raw(" clone  "),
             kb("r", app),
             Span::raw(" refresh  "),
+            kb("l", app),
+            Span::raw(" log  "),
             kb("q", app),
             Span::raw(" quit"),
         ])
