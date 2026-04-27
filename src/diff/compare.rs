@@ -93,3 +93,119 @@ fn same_size_mtime(src: &WalkEntry, dst: &WalkEntry) -> bool {
     }
     (src.mtime_ns - dst.mtime_ns).abs() <= MTIME_TOLERANCE_NS
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use camino::Utf8PathBuf;
+
+    fn entry(path: &str, size: u64, mtime_ns: i128) -> WalkEntry {
+        WalkEntry { rel: Utf8PathBuf::from(path), size, mtime_ns }
+    }
+
+    const T: i128 = 1_000_000_000_000; // arbitrary base timestamp
+
+    #[test]
+    fn empty_both_produces_empty_plan() {
+        let plan = compare(&[], &[], Verify::SizeMtime);
+        assert!(plan.entries.is_empty());
+    }
+
+    #[test]
+    fn all_new_when_dst_empty() {
+        let src = vec![entry("a.flac", 100, T), entry("b.flac", 200, T)];
+        let plan = compare(&src, &[], Verify::SizeMtime);
+        assert_eq!(plan.count(EntryKind::New), 2);
+        assert_eq!(plan.count(EntryKind::Orphan), 0);
+    }
+
+    #[test]
+    fn all_orphan_when_src_empty() {
+        let dst = vec![entry("a.flac", 100, T), entry("b.flac", 200, T)];
+        let plan = compare(&[], &dst, Verify::SizeMtime);
+        assert_eq!(plan.count(EntryKind::Orphan), 2);
+        assert_eq!(plan.count(EntryKind::New), 0);
+    }
+
+    #[test]
+    fn identical_entries_are_same() {
+        let src = vec![entry("a.flac", 100, T)];
+        let dst = vec![entry("a.flac", 100, T)];
+        let plan = compare(&src, &dst, Verify::SizeMtime);
+        assert_eq!(plan.count(EntryKind::Same), 1);
+    }
+
+    #[test]
+    fn different_size_is_modified() {
+        let src = vec![entry("a.flac", 200, T)];
+        let dst = vec![entry("a.flac", 100, T)];
+        let plan = compare(&src, &dst, Verify::SizeMtime);
+        assert_eq!(plan.count(EntryKind::Modified), 1);
+    }
+
+    #[test]
+    fn mtime_diff_beyond_tolerance_is_modified() {
+        // 3 seconds apart — exceeds the 2 s FAT32 tolerance.
+        let src = vec![entry("a.flac", 100, T + 3_000_000_001)];
+        let dst = vec![entry("a.flac", 100, T)];
+        let plan = compare(&src, &dst, Verify::SizeMtime);
+        assert_eq!(plan.count(EntryKind::Modified), 1);
+    }
+
+    #[test]
+    fn mtime_diff_within_fat32_tolerance_is_same() {
+        // 2 seconds apart — within FAT32 granularity, treated as Same.
+        let src = vec![entry("a.flac", 100, T + 2_000_000_000)];
+        let dst = vec![entry("a.flac", 100, T)];
+        let plan = compare(&src, &dst, Verify::SizeMtime);
+        assert_eq!(plan.count(EntryKind::Same), 1);
+    }
+
+    #[test]
+    fn verify_none_always_same() {
+        // Even with different sizes, Verify::None never marks Modified.
+        let src = vec![entry("a.flac", 999, T + 10_000_000_000)];
+        let dst = vec![entry("a.flac", 100, T)];
+        let plan = compare(&src, &dst, Verify::None);
+        assert_eq!(plan.count(EntryKind::Same), 1);
+        assert_eq!(plan.count(EntryKind::Modified), 0);
+    }
+
+    #[test]
+    fn mixed_plan_counts_correctly() {
+        let src = vec![
+            entry("album/01.flac", 100, T),      // Same
+            entry("album/02.flac", 200, T),      // Modified (size change)
+            entry("album/03.flac", 300, T),      // New
+        ];
+        let dst = vec![
+            entry("album/01.flac", 100, T),      // Same
+            entry("album/02.flac", 150, T),      // → Modified
+            entry("album/04.flac", 400, T),      // Orphan
+        ];
+        let plan = compare(&src, &dst, Verify::SizeMtime);
+        assert_eq!(plan.count(EntryKind::New),      1, "new");
+        assert_eq!(plan.count(EntryKind::Modified), 1, "modified");
+        assert_eq!(plan.count(EntryKind::Orphan),   1, "orphan");
+        assert_eq!(plan.count(EntryKind::Same),     1, "same");
+    }
+
+    #[test]
+    fn transfer_bytes_counts_new_and_modified_only() {
+        let src = vec![
+            entry("new.flac",      500, T),
+            entry("modified.flac", 300, T + 5_000_000_000),
+            entry("same.flac",     100, T),
+        ];
+        let dst = vec![
+            entry("modified.flac", 300, T),
+            entry("orphan.flac",   200, T),
+            entry("same.flac",     100, T),
+        ];
+        let plan = compare(&src, &dst, Verify::SizeMtime);
+        // transfer_bytes = new(500) + modified(300)
+        assert_eq!(plan.transfer_bytes(), 800);
+    }
+}
