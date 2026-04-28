@@ -10,9 +10,14 @@ limits, supported codecs, cache folders to exclude.
 
 ## Status
 
-**Active development — pre-0.1.** Core modules working:
-`logging` · `config` · `dap` · `scan` · `diff`.
-`transfer` (the actual sync) is next. See [`BACKLOG.md`](BACKLOG.md).
+**v0.2.0 released.** Real-world validated: 2,108 FLAC · 75 GB · HiBy R4
+microSD · mirror + additive modes.
+
+v0.2 adds: blake3 checksum verification, tag-based filters (artist ·
+genre · sample rate · bit depth), ffmpeg transcode pipeline with a
+blake3-keyed cache, and `dapctl export m3u`.
+
+See [`BACKLOG.md`](BACKLOG.md) and [`CHANGELOG.md`](CHANGELOG.md).
 
 ## How it works
 
@@ -49,16 +54,18 @@ scripts, packaged as an honest, auditable, portable tool.
 ## Commands
 
 ```
-dapctl                        # launch TUI
-dapctl sync <profile>         # sync to DAP (dry-run by default in mirror mode)
-dapctl diff <profile>         # preview without touching the destination
-dapctl diff <profile> --json  # machine-readable plan
-dapctl scan                   # detect removable drives, identify DAPs
+dapctl                          # launch TUI
+dapctl sync <profile>           # sync to DAP (dry-run by default in mirror mode)
+dapctl diff <profile>           # preview without touching the destination
+dapctl diff <profile> --json    # machine-readable plan
+dapctl scan                     # detect removable drives, identify DAPs
 dapctl scan --json
-dapctl profile list           # list DAP profiles + user sync profiles
-dapctl profile show <dap-id>  # full DAP profile details
-dapctl profile check <file>   # validate a sync profile TOML
-dapctl log                    # tail the structured log
+dapctl profile list             # list DAP profiles + user sync profiles
+dapctl profile show <dap-id>    # full DAP profile details
+dapctl profile check <file>     # validate a sync profile TOML
+dapctl log                      # tail the structured log
+dapctl export m3u <profile>     # generate M3U playlist for the DAP
+dapctl export m3u <profile> -o playlist.m3u
 ```
 
 Every TUI action has a non-interactive CLI equivalent (`--yes`,
@@ -76,9 +83,10 @@ cargo build --release
 ./target/release/dapctl --help
 ```
 
-Requires Rust stable (≥ 1.75). No external dependencies beyond the
-Rust toolchain — `ffmpeg` is only needed for transcoding (v0.2,
-optional, detected in PATH at runtime).
+Requires Rust stable (≥ 1.80). No external dependencies beyond the
+Rust toolchain — `ffmpeg` is optional and only needed for transcoding;
+it is detected in PATH at runtime. If not found, transcoding entries
+are skipped with a warning.
 
 ## DAP profiles
 
