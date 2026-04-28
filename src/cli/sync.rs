@@ -3,7 +3,7 @@ use clap::Args as ClapArgs;
 use crate::config::Mode;
 use crate::diff::EntryKind;
 use crate::scan::fmt_bytes;
-use crate::transfer::executor::{Options, SyncMode};
+use crate::transfer::executor::{Options, SyncMode, TranscodeOpts};
 
 #[derive(ClapArgs, Debug)]
 pub struct Args {
@@ -143,6 +143,7 @@ pub fn run(args: Args, yes: bool) -> anyhow::Result<()> {
     let manifest_dir = manifest_dir()?;
     let run_id = crate::logging::current_run_id();
 
+    let transcode = build_transcode_opts(&resolved);
     let opts = Options {
         dry_run: false,
         mode,
@@ -150,6 +151,7 @@ pub fn run(args: Args, yes: bool) -> anyhow::Result<()> {
         run_id,
         manifest_dir,
         progress_tx: None,
+        transcode,
     };
 
     let stats = crate::transfer::execute(plan, &source, &destination, &opts)?;
@@ -177,6 +179,22 @@ pub fn run(args: Args, yes: bool) -> anyhow::Result<()> {
     );
 
     Ok(())
+}
+
+fn build_transcode_opts(
+    resolved: &crate::config::ResolvedProfile,
+) -> Option<TranscodeOpts> {
+    let tc = &resolved.sync.transcode;
+    if !tc.enabled || tc.rules.is_empty() {
+        return None;
+    }
+    let dirs = directories::ProjectDirs::from("", "", "dapctl")?;
+    let cache_path = dirs.cache_dir().join("transcode");
+    let cache_utf8 = camino::Utf8PathBuf::from_path_buf(cache_path).ok()?;
+    Some(TranscodeOpts {
+        rules: tc.rules.clone(),
+        cache: crate::transcode::Cache::new(cache_utf8),
+    })
 }
 
 fn manifest_dir() -> anyhow::Result<camino::Utf8PathBuf> {

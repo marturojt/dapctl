@@ -5,7 +5,7 @@ use globset::{Glob, GlobSet, GlobSetBuilder};
 
 pub mod schema;
 
-pub use schema::{Filters, Mode, SyncProfile, Transcode, Transfer, Verify};
+pub use schema::{Filters, Mode, SyncProfile, Transcode, TranscodeRule, Transfer, Verify};
 
 // ---------------------------------------------------------------------------
 // Loading

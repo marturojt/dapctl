@@ -249,6 +249,7 @@ fn launch_sync(app: &mut App) {
             run_id,
             manifest_dir,
             progress_tx: Some(tx),
+            transcode: None,
         };
         let _ = crate::transfer::execute(&plan, &source, &destination, &opts);
     });

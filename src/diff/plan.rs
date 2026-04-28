@@ -19,6 +19,10 @@ pub struct Entry {
     pub kind: EntryKind,
     pub path: Utf8PathBuf,
     pub size_bytes: u64,
+    /// When `Some`, the file must be transcoded from the given source extension.
+    /// E.g. `Some("dsf")` means `path` ends in `.flac` but the source file is `.dsf`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcode_from: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

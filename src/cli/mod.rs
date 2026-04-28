@@ -4,6 +4,7 @@ use clap::{Parser, Subcommand};
 use ulid::Ulid;
 
 pub mod diff;
+pub mod export;
 pub mod log;
 pub mod profile;
 pub mod scan;
@@ -45,6 +46,8 @@ enum Command {
     Profile(profile::Args),
     /// Tail or query the structured log.
     Log(log::Args),
+    /// Export utilities (M3U playlist, …).
+    Export(export::Args),
 }
 
 /// Parse argv, initialise logging, and dispatch.
@@ -75,6 +78,7 @@ pub fn run() -> anyhow::Result<()> {
         Some(Command::Scan(a)) => scan::run(a),
         Some(Command::Profile(a)) => profile::run(a),
         Some(Command::Log(a)) => log::run(a),
+        Some(Command::Export(a)) => export::run(a),
     };
 
     crate::logging::finish(result.is_ok());

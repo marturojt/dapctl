@@ -92,8 +92,25 @@ pub enum Verify {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Transcode {
+    /// Must be `true` for rules to take effect.
     #[serde(default)]
     pub enabled: bool,
+    /// Ordered list of format-conversion rules applied during sync.
+    #[serde(default)]
+    pub rules: Vec<TranscodeRule>,
+}
+
+/// A single ffmpeg transcode rule.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscodeRule {
+    /// Source file extension to match (case-insensitive), e.g. `"DSF"`.
+    pub from: String,
+    /// Destination extension to produce, e.g. `"FLAC"`.
+    pub to: String,
+    /// Extra ffmpeg arguments inserted between `-i <input>` and `<output>`.
+    /// Example: `"-ar 176400 -sample_fmt s32"`. Empty = let ffmpeg decide.
+    #[serde(default)]
+    pub params: String,
 }
 
 fn default_verify() -> Verify {

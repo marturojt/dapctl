@@ -32,9 +32,15 @@ pub fn diff(
     let exclude = profile.build_exclude_set()?;
     let include = profile.build_include_set()?;
     let compute_hashes = matches!(profile.sync.transfer.verify, crate::config::Verify::Checksum);
+    let transcode_rules = if profile.sync.transcode.enabled {
+        profile.sync.transcode.rules.as_slice()
+    } else {
+        &[]
+    };
 
-    let src_entries = walker::walk(source, &exclude, include.as_ref(), compute_hashes, &profile.sync.filters)?;
-    let dst_entries = walker::walk(destination, &exclude, None, compute_hashes, &profile.sync.filters)?;
+    // Destination is walked WITHOUT transcode projection — it contains real files.
+    let src_entries = walker::walk(source, &exclude, include.as_ref(), compute_hashes, &profile.sync.filters, transcode_rules)?;
+    let dst_entries = walker::walk(destination, &exclude, None, compute_hashes, &profile.sync.filters, &[])?;
 
     tracing::info!(
         event = "scan_done",

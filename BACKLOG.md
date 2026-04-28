@@ -134,10 +134,15 @@ workflow is microSD extraction + card reader. See README for rationale.
       `include_genres`, `exclude_genres`, `min_sample_rate_hz`,
       `max_sample_rate_hz`, `min_bit_depth` in sync profile `[filters]`.
       Unreadable files always pass (graceful degradation).
-- [ ] ffmpeg detection + capability probe.
-- [ ] Transcode cache under `$XDG_CACHE_HOME/dapctl/transcode/`.
-- [ ] Rule language: `from`/`to`/`params` in sync profile `[transcode]`.
-- [ ] M3U export with path rewrites for the DAP.
+- [x] ffmpeg detection + capability probe (`transcode::ffmpeg::detect()`).
+- [x] Transcode cache under `$XDG_CACHE_HOME/dapctl/transcode/`
+      (256-shard blake3-keyed layout; `Cache::get` / `Cache::store`).
+- [x] Rule language: `from`/`to`/`params` in sync profile `[transcode]`.
+      Extension projection in walker (src ext → dst ext before diff);
+      mtime-only staleness check across formats in compare.
+      Executor uses cache on hit, runs ffmpeg on miss, stores result.
+- [x] `dapctl export m3u <profile> [--output PATH]` — walks source with
+      same filters as sync, prefixes paths with `dap.layout.music_root`.
 
 ## Milestone 3 — v0.3 TUI player + audit + cover fetch
 

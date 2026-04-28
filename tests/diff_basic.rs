@@ -38,12 +38,12 @@ fn no_tag_filters() -> Filters {
 
 fn walk_dir(dir: &TempDir) -> Vec<dapctl::diff::walker::Entry> {
     let root = Utf8PathBuf::from_path_buf(dir.path().to_owned()).unwrap();
-    walk(&root, &empty_globset(), None, false, &no_tag_filters()).unwrap()
+    walk(&root, &empty_globset(), None, false, &no_tag_filters(), &[]).unwrap()
 }
 
 fn walk_dir_hashed(dir: &TempDir) -> Vec<dapctl::diff::walker::Entry> {
     let root = Utf8PathBuf::from_path_buf(dir.path().to_owned()).unwrap();
-    walk(&root, &empty_globset(), None, true, &no_tag_filters()).unwrap()
+    walk(&root, &empty_globset(), None, true, &no_tag_filters(), &[]).unwrap()
 }
 
 // ── Walker tests ──────────────────────────────────────────────────────────────
@@ -58,7 +58,7 @@ fn walker_empty_dir_returns_empty() {
 #[test]
 fn walker_missing_dir_returns_empty() {
     let root = Utf8PathBuf::from("/nonexistent/path/that/does/not/exist");
-    let entries = walk(&root, &empty_globset(), None, false, &no_tag_filters()).unwrap();
+    let entries = walk(&root, &empty_globset(), None, false, &no_tag_filters(), &[]).unwrap();
     assert!(entries.is_empty());
 }
 
@@ -104,7 +104,7 @@ fn walker_exclude_glob_skips_matching_files() {
         b.build().unwrap()
     };
     let root = Utf8PathBuf::from_path_buf(dir.path().to_owned()).unwrap();
-    let entries = walk(&root, &exclude, None, false, &no_tag_filters()).unwrap();
+    let entries = walk(&root, &exclude, None, false, &no_tag_filters(), &[]).unwrap();
 
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].rel.as_str(), "music/track.flac");
@@ -123,7 +123,7 @@ fn walker_include_glob_filters_to_matching_only() {
         b.build().unwrap()
     };
     let root = Utf8PathBuf::from_path_buf(dir.path().to_owned()).unwrap();
-    let entries = walk(&root, &empty_globset(), Some(&include), false, &no_tag_filters()).unwrap();
+    let entries = walk(&root, &empty_globset(), Some(&include), false, &no_tag_filters(), &[]).unwrap();
 
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].rel.as_str(), "track.flac");
@@ -367,7 +367,7 @@ fn tag_filter_unreadable_file_passes_gracefully() {
         min_sample_rate_hz: Some(44100),
         ..Filters::default()
     };
-    let entries = walk(&root, &empty_globset(), None, false, &filters).unwrap();
+    let entries = walk(&root, &empty_globset(), None, false, &filters, &[]).unwrap();
 
     assert_eq!(entries.len(), 1, "unreadable file must pass tag filters (graceful degradation)");
 }
@@ -387,7 +387,7 @@ fn tag_filter_sample_rate_applied_when_readable() {
         ..Filters::default()
     };
     // Unreadable file → passes (returns 1 entry).
-    let entries = walk(&root, &empty_globset(), None, false, &filters).unwrap();
+    let entries = walk(&root, &empty_globset(), None, false, &filters, &[]).unwrap();
     assert_eq!(entries.len(), 1);
 }
 
@@ -406,7 +406,7 @@ fn tag_filter_include_artist_excludes_non_matching() {
         ..Filters::default()
     };
     // File is unreadable → lofty returns error → passes through untouched.
-    let entries = walk(&root, &empty_globset(), None, false, &filters).unwrap();
+    let entries = walk(&root, &empty_globset(), None, false, &filters, &[]).unwrap();
     assert_eq!(entries.len(), 1, "unreadable file passes even artist include filter");
 }
 

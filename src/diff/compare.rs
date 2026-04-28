@@ -27,6 +27,7 @@ pub fn compare(src: &[WalkEntry], dst: &[WalkEntry], verify: Verify) -> Plan {
                     kind: EntryKind::New,
                     path: src[si].rel.clone(),
                     size_bytes: src[si].size,
+                    transcode_from: src[si].src_ext.clone(),
                 });
                 si += 1;
             }
@@ -35,6 +36,7 @@ pub fn compare(src: &[WalkEntry], dst: &[WalkEntry], verify: Verify) -> Plan {
                     kind: EntryKind::Orphan,
                     path: dst[di].rel.clone(),
                     size_bytes: dst[di].size,
+                    transcode_from: None,
                 });
                 di += 1;
             }
@@ -44,6 +46,7 @@ pub fn compare(src: &[WalkEntry], dst: &[WalkEntry], verify: Verify) -> Plan {
                     kind,
                     path: src[si].rel.clone(),
                     size_bytes: src[si].size,
+                    transcode_from: src[si].src_ext.clone(),
                 });
                 si += 1;
                 di += 1;
@@ -57,6 +60,7 @@ pub fn compare(src: &[WalkEntry], dst: &[WalkEntry], verify: Verify) -> Plan {
             kind: EntryKind::New,
             path: e.rel.clone(),
             size_bytes: e.size,
+            transcode_from: e.src_ext.clone(),
         });
     }
 
@@ -66,6 +70,7 @@ pub fn compare(src: &[WalkEntry], dst: &[WalkEntry], verify: Verify) -> Plan {
             kind: EntryKind::Orphan,
             path: e.rel.clone(),
             size_bytes: e.size,
+            transcode_from: None,
         });
     }
 
@@ -73,6 +78,17 @@ pub fn compare(src: &[WalkEntry], dst: &[WalkEntry], verify: Verify) -> Plan {
 }
 
 fn classify(src: &WalkEntry, dst: &WalkEntry, verify: Verify) -> EntryKind {
+    // Transcoded entries: source and destination are different formats, so size and
+    // checksum comparisons are meaningless. Use mtime staleness instead:
+    // if destination is at least as new as the source, it was produced from this source.
+    if src.src_ext.is_some() {
+        return if dst.mtime_ns >= src.mtime_ns {
+            EntryKind::Same
+        } else {
+            EntryKind::Modified
+        };
+    }
+
     match verify {
         Verify::None => EntryKind::Same,
         Verify::SizeMtime => {
@@ -114,12 +130,22 @@ mod tests {
     use camino::Utf8PathBuf;
 
     fn entry(path: &str, size: u64, mtime_ns: i128) -> WalkEntry {
-        WalkEntry { rel: Utf8PathBuf::from(path), size, mtime_ns, hash: None }
+        WalkEntry { rel: Utf8PathBuf::from(path), size, mtime_ns, hash: None, src_ext: None }
     }
 
     fn entry_hashed(path: &str, size: u64, data: &[u8]) -> WalkEntry {
         let hash = Some(blake3::hash(data));
-        WalkEntry { rel: Utf8PathBuf::from(path), size, mtime_ns: 0, hash }
+        WalkEntry { rel: Utf8PathBuf::from(path), size, mtime_ns: 0, hash, src_ext: None }
+    }
+
+    fn transcoded_entry(path: &str, size: u64, mtime_ns: i128, src_ext: &str) -> WalkEntry {
+        WalkEntry {
+            rel: Utf8PathBuf::from(path),
+            size,
+            mtime_ns,
+            hash: None,
+            src_ext: Some(src_ext.to_owned()),
+        }
     }
 
     const T: i128 = 1_000_000_000_000; // arbitrary base timestamp
@@ -207,6 +233,34 @@ mod tests {
         assert_eq!(plan.count(EntryKind::Modified), 1, "modified");
         assert_eq!(plan.count(EntryKind::Orphan),   1, "orphan");
         assert_eq!(plan.count(EntryKind::Same),     1, "same");
+    }
+
+    #[test]
+    fn transcoded_dst_newer_is_same() {
+        // dst.mtime >= src.mtime → transcode is up-to-date.
+        let src = vec![transcoded_entry("song.flac", 1000, T, "dsf")];
+        let dst = vec![entry("song.flac", 5000, T + 1_000_000_000)]; // different size, newer mtime
+        let plan = compare(&src, &dst, Verify::SizeMtime);
+        assert_eq!(plan.count(EntryKind::Same), 1);
+        assert_eq!(plan.count(EntryKind::Modified), 0);
+    }
+
+    #[test]
+    fn transcoded_src_newer_is_modified() {
+        // src (DSF) has been updated after dst (FLAC) was produced → re-transcode.
+        let src = vec![transcoded_entry("song.flac", 1000, T + 5_000_000_000, "dsf")];
+        let dst = vec![entry("song.flac", 5000, T)];
+        let plan = compare(&src, &dst, Verify::SizeMtime);
+        assert_eq!(plan.count(EntryKind::Modified), 1);
+    }
+
+    #[test]
+    fn transcoded_new_entry_carries_transcode_from() {
+        // New transcoded entry must carry transcode_from so executor finds the DSF.
+        let src = vec![transcoded_entry("song.flac", 1000, T, "dsf")];
+        let plan = compare(&src, &[], Verify::SizeMtime);
+        assert_eq!(plan.count(EntryKind::New), 1);
+        assert_eq!(plan.entries[0].transcode_from.as_deref(), Some("dsf"));
     }
 
     #[test]

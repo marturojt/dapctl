@@ -6,7 +6,7 @@ use anyhow::Context;
 use camino::{Utf8Path, Utf8PathBuf};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
-use crate::config::Verify;
+use crate::config::{TranscodeRule, Verify};
 use crate::diff::{EntryKind, Plan};
 use crate::transfer::manifest::{Manifest, ManifestEntry, State};
 use crate::transfer::ProgressEvent;
@@ -30,6 +30,14 @@ pub struct Options {
     pub manifest_dir: Utf8PathBuf,
     /// When set, progress events are sent here and indicatif bars are hidden.
     pub progress_tx: Option<Sender<ProgressEvent>>,
+    /// When set, files with a matching `transcode_from` in the plan are run
+    /// through ffmpeg instead of being copied directly.
+    pub transcode: Option<TranscodeOpts>,
+}
+
+pub struct TranscodeOpts {
+    pub rules: Vec<TranscodeRule>,
+    pub cache: crate::transcode::Cache,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -123,7 +131,6 @@ pub fn execute(
 
     // ── Copy loop ──────────────────────────────────────────────────────────
     for entry in &to_copy {
-        let src = src_root.join(&entry.path);
         let dst = dst_root.join(&entry.path);
         let tmp = tmp_path(&dst);
 
@@ -131,10 +138,6 @@ pub fn execute(
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("cannot create {parent}"))?;
         }
-
-        file_bar.set_length(entry.size_bytes);
-        file_bar.set_position(0);
-        file_bar.set_message(truncate_path(&entry.path, 70));
 
         let _ = manifest.update(&ManifestEntry {
             path: entry.path.clone(),
@@ -152,7 +155,48 @@ pub fn execute(
             });
         }
 
-        match copy_with_progress(&src, &tmp, &file_bar, &overall, opts.progress_tx.as_ref()) {
+        // Decide copy strategy: direct copy or transcode via ffmpeg.
+        let copy_result = if let (Some(from_ext), Some(ref tc)) =
+            (&entry.transcode_from, &opts.transcode)
+        {
+            // Locate the actual source file using the original extension.
+            let src_path = entry.path.with_extension(from_ext);
+            let actual_src = src_root.join(&src_path);
+            let rule = tc.rules.iter()
+                .find(|r| r.from.to_lowercase() == from_ext.to_lowercase());
+
+            if let Some(rule) = rule {
+                file_bar.set_length(0); // indeterminate during transcode
+                file_bar.set_message(format!(
+                    "[TC] {}",
+                    truncate_path(&entry.path, 65)
+                ));
+                do_transcode(&actual_src, &dst, &tmp, rule, tc)
+            } else {
+                // Rule disappeared at runtime — fall back to direct copy.
+                let src = src_root.join(&entry.path);
+                file_bar.set_length(entry.size_bytes);
+                file_bar.set_position(0);
+                file_bar.set_message(truncate_path(&entry.path, 70));
+                copy_with_progress(&src, &tmp, &file_bar, &overall, opts.progress_tx.as_ref())
+            }
+        } else {
+            let src = src_root.join(&entry.path);
+            file_bar.set_length(entry.size_bytes);
+            file_bar.set_position(0);
+            file_bar.set_message(truncate_path(&entry.path, 70));
+            copy_with_progress(&src, &tmp, &file_bar, &overall, opts.progress_tx.as_ref())
+        };
+
+        // ── Post-copy: rename, preserve mtime, verify ─────────────────────
+        let actual_src_for_mtime = if let Some(from_ext) = &entry.transcode_from {
+            src_root.join(entry.path.with_extension(from_ext))
+        } else {
+            src_root.join(&entry.path)
+        };
+        let is_transcoded = entry.transcode_from.is_some();
+
+        match copy_result {
             Ok(written) => {
                 if dst.exists() {
                     std::fs::remove_file(&dst)
@@ -161,15 +205,25 @@ pub fn execute(
                 std::fs::rename(&tmp, &dst)
                     .with_context(|| format!("cannot rename tmp → {dst}"))?;
 
-                preserve_mtime(&src, &dst);
+                preserve_mtime(&actual_src_for_mtime, &dst);
 
-                let verified = match opts.verify {
-                    Verify::None => true,
-                    Verify::SizeMtime => {
-                        crate::transfer::verify::size_mtime(&src, &dst).unwrap_or(false)
-                    }
-                    Verify::Checksum => {
-                        crate::transfer::verify::checksum(&src, &dst).unwrap_or(false)
+                // Transcoded files verify that the output exists and is non-empty.
+                // Format-agnostic checksum comparison makes no sense across formats.
+                let verified = if is_transcoded {
+                    dst.metadata().map_or(false, |m| m.len() > 0)
+                } else {
+                    match opts.verify {
+                        Verify::None => true,
+                        Verify::SizeMtime => crate::transfer::verify::size_mtime(
+                            &actual_src_for_mtime,
+                            &dst,
+                        )
+                        .unwrap_or(false),
+                        Verify::Checksum => crate::transfer::verify::checksum(
+                            &actual_src_for_mtime,
+                            &dst,
+                        )
+                        .unwrap_or(false),
                     }
                 };
 
@@ -308,6 +362,40 @@ fn copy_with_progress(
     file.sync_data()?;
 
     Ok(total)
+}
+
+/// Run ffmpeg to transcode `src` into `tmp`, using the rule's params.
+/// If the cache has a valid entry it is copied from cache instead, avoiding
+/// a re-transcode. The result is written to `tmp` (the caller renames it to `dst`).
+/// Returns the number of bytes written.
+fn do_transcode(
+    src: &Utf8Path,
+    dst: &Utf8Path,
+    tmp: &Utf8Path,
+    rule: &TranscodeRule,
+    tc: &TranscodeOpts,
+) -> anyhow::Result<u64> {
+    let to_ext = rule.to.to_lowercase();
+
+    // Check cache.
+    let key = crate::transcode::cache_key(src, &rule.params)
+        .with_context(|| format!("cannot hash {src} for transcode cache"))?;
+
+    if let Some(cached) = tc.cache.get(&key, &to_ext) {
+        tracing::debug!(event = "transcode_cache_hit", path = %dst);
+        std::fs::copy(cached.as_std_path(), tmp.as_std_path())
+            .with_context(|| format!("cannot copy cached transcode to {tmp}"))?;
+    } else {
+        tracing::info!(event = "transcode_start", src = %src, dst = %dst);
+        crate::transcode::transcode(src, tmp, rule)
+            .with_context(|| format!("transcode {src} → {dst}"))?;
+        // Store in cache (best-effort; failure is non-fatal).
+        if let Err(e) = tc.cache.store(&key, &to_ext, tmp) {
+            tracing::warn!(event = "cache_store_fail", err = %e);
+        }
+    }
+
+    Ok(tmp.metadata().map_or(0, |m| m.len()))
 }
 
 /// Walk `src_root` + `dst_root` and for every file that exists in both with

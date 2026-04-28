@@ -21,14 +21,36 @@ Versioning: [SemVer](https://semver.org/).
   All new fields are optional and default to "no filter". Files that lofty
   cannot parse (DSD formats, non-audio, corrupt) always pass — they are
   never silently dropped.
+- Transcode pipeline (`[transcode]` section in sync profile):
+  - `transcode::ffmpeg::detect()` — probes for `ffmpeg` in PATH at
+    startup; logs version when found.
+  - Rule language: `[[transcode.rules]]` entries with `from`, `to`, and
+    optional `params` fields.
+  - Extension projection in the diff walker: source files matching a rule's
+    `from` extension are projected to `to` before the destination diff,
+    so `song.dsf` compares against `song.flac` on the DAP.
+  - Mtime-only staleness for transcoded pairs (size/checksum comparison
+    across different formats is meaningless); source mtime is preserved on
+    the output after transcode so re-runs are idempotent.
+  - Transcode cache at `$XDG_CACHE_HOME/dapctl/transcode/` with a
+    256-shard blake3-keyed layout (`blake3(source_content || params)`).
+    Cache hit avoids re-running ffmpeg; failure to write cache is non-fatal.
+  - `TranscodeOpts` wired into `executor::Options`; `cli::sync` builds it
+    from `ProjectDirs` when `transcode.enabled = true` and rules are present.
+- `dapctl export m3u <profile> [--output PATH]`: walks the source with the
+  same filters as `dapctl sync`, prefixes each path with the DAP's
+  `layout.music_root`, and emits a standard `#EXTM3U` playlist. Write to
+  file or stdout.
 
 ### Tests
 - 4 new unit tests for `Verify::Checksum` classify paths (same hash,
   different hash same size, no-hash mtime fallback).
+- 3 new unit tests for transcode classify paths (dst newer → Same,
+  src newer → Modified, new entry carries `transcode_from`).
 - 2 new integration tests: `diff_checksum_detects_silent_corruption`
   (same size + mtime, different content → Modified) and
   `diff_checksum_same_content_is_same` (different mtime, same content →
-  Same). Total: 36 tests.
+  Same). Total: 39 tests.
 - 4 new tag-filter integration tests covering inactive-by-default,
   graceful degradation on unreadable files, and sample-rate / artist
   filter activation.
