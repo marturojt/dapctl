@@ -7,9 +7,11 @@ use std::time::Instant;
 use camino::Utf8PathBuf;
 
 use crate::config::{Mode, SyncProfile};
+use crate::player::engine::{PlayerHandle, PlayerEvent};
 use crate::scan::ScanResult;
 use crate::transfer::{ProgressEvent, Stats};
 use crate::tui::theme::Theme;
+use crate::tui::views::player::PlayerState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
@@ -18,6 +20,7 @@ pub enum View {
     Progress,
     Log,
     NewProfile,
+    Player,
 }
 
 /// State of the diff computation.
@@ -534,6 +537,11 @@ pub struct App {
     pub log_lines: Vec<LogEntry>,
     pub log_scroll: usize,
     pub log_run_id: String,
+
+    // Player view
+    pub player_state: Option<PlayerState>,
+    pub player_handle: Option<PlayerHandle>,
+    pub player_rx: Option<Receiver<PlayerEvent>>,
 }
 
 /// A single parsed JSONL log entry for display.
@@ -598,6 +606,9 @@ impl App {
             log_lines: Vec::new(),
             log_scroll: 0,
             log_run_id: String::new(),
+            player_state: None,
+            player_handle: None,
+            player_rx: None,
         })
     }
 
@@ -675,6 +686,34 @@ impl App {
         let profile = profile.clone();
         self.wizard = Some(NewProfileState::from_clone(&profile, &self.scan));
         self.view = View::NewProfile;
+    }
+
+    // ── Player view ───────────────────────────────────────────────────────
+
+    pub fn enter_player(&mut self) {
+        if self.player_state.is_none() {
+            match crate::player::engine::spawn() {
+                Some((handle, rx)) => {
+                    self.player_state = Some(PlayerState::new(true));
+                    self.player_handle = Some(handle);
+                    self.player_rx = Some(rx);
+                }
+                None => {
+                    self.player_state = Some(PlayerState::new(false));
+                }
+            }
+        }
+        self.view = View::Player;
+    }
+
+    pub fn drain_player(&mut self) {
+        let rx = match self.player_rx.as_ref() {
+            Some(r) => r,
+            None => return,
+        };
+        if let Some(ref mut ps) = self.player_state {
+            ps.drain_events(rx);
+        }
     }
 
     // ── Log view ─────────────────────────────────────────────────────────

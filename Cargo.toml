@@ -1,8 +1,8 @@
 [package]
 name        = "dapctl"
-version     = "0.1.0"
+version     = "0.3.0"
 edition     = "2021"
-rust-version = "1.75"
+rust-version = "1.80"
 description = "TUI/CLI sync tool for HiFi Digital Audio Players"
 license     = "GPL-3.0-or-later"
 repository  = "https://github.com/marturojt/dapctl"
@@ -38,6 +38,7 @@ ulid                = { version = "1", features = ["serde"] }
 time                = { version = "0.3", features = ["serde", "formatting", "macros"] }
 sysinfo             = "0.32"
 lofty               = "0.22"
+rodio               = { version = "0.19", default-features = false, features = ["symphonia-all"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }

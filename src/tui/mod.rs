@@ -43,8 +43,9 @@ fn event_loop(
     app: &mut App,
 ) -> anyhow::Result<()> {
     loop {
-        // Drain progress events before drawing so we always render fresh state.
+        // Drain progress and player events before drawing.
         app.drain_progress();
+        app.drain_player();
 
         terminal.draw(|f| draw(f, app))?;
 
@@ -64,6 +65,8 @@ fn event_loop(
                 }
                 if app.view == View::NewProfile {
                     handle_wizard_key(app, key);
+                } else if app.view == View::Player {
+                    handle_player_key(app, key);
                 } else {
                     handle_key(app, key.code, key.modifiers);
                 }
@@ -77,13 +80,18 @@ fn event_loop(
     Ok(())
 }
 
-fn draw(f: &mut ratatui::Frame, app: &App) {
+fn draw(f: &mut ratatui::Frame, app: &mut App) {
     match app.view {
         View::Profiles => views::profiles::render(f, app),
         View::Diff => views::diff::render(f, app),
         View::Progress => views::progress::render(f, app),
         View::Log => views::log::render(f, app),
         View::NewProfile => views::new_profile::render(f, app),
+        View::Player => {
+            if let Some(ref mut ps) = app.player_state {
+                views::player::draw(f, f.area(), ps, &app.theme);
+            }
+        }
     }
 }
 
@@ -141,6 +149,9 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
             } else {
                 app.enter_clone_profile();
             }
+        }
+        (KeyCode::Char('m'), _) if app.view == View::Profiles => {
+            app.enter_player();
         }
 
         // ── Log ──────────────────────────────────────────────────────────
@@ -503,6 +514,42 @@ fn compute_diff(app: &mut App) {
         Err(e) => {
             app.diff_state = DiffState::Error(format!("diff: {e}"));
         }
+    }
+}
+
+// ── Player key handler ────────────────────────────────────────────────────────
+
+fn handle_player_key(app: &mut App, key: crossterm::event::KeyEvent) {
+    use crossterm::event::KeyCode as K;
+
+    if key.code == K::Char('c')
+        && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
+    {
+        app.should_quit = true;
+        return;
+    }
+
+    let go_back = if let Some(ref mut ps) = app.player_state {
+        if let Some(ref handle) = app.player_handle {
+            views::player::handle_key(ps, handle, key)
+        } else {
+            matches!(key.code, K::Char('q') | K::Esc)
+        }
+    } else {
+        true
+    };
+
+    // Sync shuffle/repeat back into PlayerStatus from last commands.
+    if let Some(ref mut ps) = app.player_state {
+        match key.code {
+            K::Char('r') => ps.status.repeat = ps.status.repeat.next(),
+            K::Char('s') => ps.status.shuffle = !ps.status.shuffle,
+            _ => {}
+        }
+    }
+
+    if go_back {
+        app.view = View::Profiles;
     }
 }
 

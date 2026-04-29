@@ -11,6 +11,7 @@ pub mod dap;
 pub mod diff;
 pub mod export;
 pub mod logging;
+pub mod player;
 pub mod scan;
 pub mod transfer;
 pub mod transcode;

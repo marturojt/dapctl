@@ -125,7 +125,7 @@ workflow is microSD extraction + card reader. See README for rationale.
 
 ---
 
-## Milestone 2 — v0.2 Transcoding & metadata  ·  *in progress*
+## Milestone 2 — v0.2 Transcoding & metadata  ·  *done (released 2026-04-28)*
 
 - [x] `Verify::Checksum` — streaming blake3 in both diff (per-walk hash) and
       transfer (post-copy verify). Silent corruption detected even when size
@@ -152,22 +152,21 @@ for detailed architecture, crate choices, and sub-milestones.
 ### 12-a · Player core  (est. 4–6 weeks)
 
 - [ ] `player::engine` — rodio::Sink management, mpsc channels for
-      `PlayerCommand` / `PlayerEvent`.
-- [ ] `player::decoder` — symphonia for PCM (FLAC/MP3/ALAC/AAC/OGG/WAV),
-      ffmpeg pipe router for DSD (same detection as v0.2 transcoding).
+      `PlayerCommand` / `PlayerEvent`. Position via `Sink::get_pos()`.
+- [ ] `player::decoder` — symphonia backend via rodio feature flags;
+      handles FLAC/MP3/AAC/OGG/WAV/ALAC natively, zero ffmpeg dependency.
 - [ ] `player::queue` — playlist, queue, shuffle/repeat.
-- [ ] `tui::views::player` — 5th Ratatui view: Now Playing + Queue list
-      + progress bar. Toggle `L`/`D` switches between source library
-      and mounted destination.
-- [ ] Add `rodio` + `symphonia` to Cargo.toml.
+- [ ] `tui::views::player` — 5th Ratatui view: Now Playing + barra de
+      progreso + cola. Toggle `L`/`D` alterna source library / destino.
+- [ ] Add `rodio` (symphonia-all feature) to Cargo.toml.
 
 ### 12-b · Player DSD + diff integration  (est. 2 weeks)
 
-- [ ] DSD via ffmpeg pipe → PCM 24/176.4 → rodio. ⚠ icon when ffmpeg
-      missing.
-- [ ] `space` keybind in diff view → push to player queue → open player
-      view. Pre-sync audio verification flow.
-- [ ] Hi-res passthrough best-effort; document WASAPI exclusive as v1.0.
+- [ ] DSD (DSF/DFF) via ffmpeg pipe → PCM 24/176.4 → rodio. Único caso
+      que requiere ffmpeg. ⚠ icon + mensaje claro cuando no está en PATH.
+- [ ] `space` keybind en diff view → push a cola del player → abre vista
+      player. Flujo "escucha antes de sincronizar".
+- [ ] Hi-res passthrough best-effort; WASAPI exclusive documentado como v1.0.
 
 ### 12-c · Audit  (est. 2 weeks)
 
@@ -190,7 +189,8 @@ for detailed architecture, crate choices, and sub-milestones.
       without `--online`.
 - [ ] `docs/NETWORK.md` — policy, user-agent, rate limits, opt-in.
 - [ ] README "What dapctl is not" section updated to reflect v0.3 scope.
-- [ ] Add `lofty`, `reqwest` (blocking), `image` to Cargo.toml.
+- [ ] Add `reqwest` (blocking) and `image` to Cargo.toml.
+- [x] `lofty` already in Cargo.toml since v0.2.
 
 ---
 
