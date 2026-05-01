@@ -34,6 +34,7 @@ pub enum PlayerEvent {
     Position(Duration),
     TrackEnded,
     QueueEmpty,
+    QueueUpdated { tracks: Vec<TrackInfo>, cursor: usize },
     Stopped,
     DecodeError { path: String, err: String },
 }
@@ -143,10 +144,12 @@ impl Engine {
                 self.sink.stop();
                 self.queue.set(tracks);
                 self.paused = false;
+                self.emit_queue_updated();
                 self.play_current();
             }
             PlayerCommand::Enqueue(track) => {
                 self.queue.push(track);
+                self.emit_queue_updated();
             }
             PlayerCommand::JumpTo(idx) => {
                 self.sink.stop();
@@ -194,6 +197,13 @@ impl Engine {
             }
         }
         true
+    }
+
+    fn emit_queue_updated(&self) {
+        let _ = self.event_tx.send(PlayerEvent::QueueUpdated {
+            tracks: self.queue.tracks().to_vec(),
+            cursor: self.queue.cursor(),
+        });
     }
 
     fn play_current(&mut self) {

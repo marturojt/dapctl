@@ -151,7 +151,7 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
             }
         }
         (KeyCode::Char('m'), _) if app.view == View::Profiles => {
-            app.enter_player();
+            app.enter_player_from_profile();
         }
 
         // ── Log ──────────────────────────────────────────────────────────

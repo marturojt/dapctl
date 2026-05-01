@@ -74,6 +74,11 @@ impl PlayerState {
                 PlayerEvent::Position(pos) => {
                     self.status.position = pos;
                 }
+                PlayerEvent::QueueUpdated { tracks, cursor } => {
+                    self.status.queue_tracks = tracks;
+                    self.status.queue_cursor = cursor;
+                    self.queue_list_state.select(Some(cursor));
+                }
                 PlayerEvent::TrackEnded => {}
                 PlayerEvent::QueueEmpty => {
                     self.status.current = None;
@@ -85,7 +90,7 @@ impl PlayerState {
                     self.status.paused = false;
                 }
                 PlayerEvent::DecodeError { path, err } => {
-                    self.flash = Some(format!("decode error: {path}: {err}"));
+                    self.flash = Some(format!("{err}  ({path})"));
                 }
             }
         }

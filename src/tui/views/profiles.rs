@@ -62,6 +62,8 @@ pub fn render(f: &mut Frame, app: &App) {
             Span::raw(" refresh  "),
             kb("l", app),
             Span::raw(" log  "),
+            kb("m", app),
+            Span::raw(" player  "),
             kb("q", app),
             Span::raw(" quit"),
         ])

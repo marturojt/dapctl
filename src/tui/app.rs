@@ -706,6 +706,27 @@ impl App {
         self.view = View::Player;
     }
 
+    /// Open the player pre-loaded with tracks from the selected profile's source.
+    pub fn enter_player_from_profile(&mut self) {
+        let source = self.profiles.get(self.profile_idx)
+            .map(|(_, p)| p.profile.source.clone());
+
+        self.enter_player();
+
+        let Some(src) = source else { return };
+        let Some(ref handle) = self.player_handle else { return };
+
+        let tracks = collect_source_tracks(&src);
+        if tracks.is_empty() {
+            if let Some(ref mut ps) = self.player_state {
+                ps.flash = Some(format!("no audio files found in {src}"));
+            }
+            return;
+        }
+
+        handle.send(crate::player::engine::PlayerCommand::PlayQueue(tracks));
+    }
+
     pub fn drain_player(&mut self) {
         let rx = match self.player_rx.as_ref() {
             Some(r) => r,
@@ -776,6 +797,37 @@ impl App {
             }
         }
     }
+}
+
+// ── Player helpers ────────────────────────────────────────────────────────────
+
+const AUDIO_EXTS: &[&str] = &[
+    "flac", "mp3", "aac", "ogg", "opus", "wav", "alac", "m4a",
+    "dsf", "dff", "wv", "wma", "aiff", "aif", "ape",
+];
+
+/// Walk `source_dir` and return all audio files as `TrackInfo` objects,
+/// sorted by path. Tag reading is skipped here for speed; tags are loaded
+/// lazily by the engine when a track starts playing.
+fn collect_source_tracks(source_dir: &str) -> Vec<crate::player::queue::TrackInfo> {
+    let mut tracks: Vec<_> = walkdir::WalkDir::new(source_dir)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .filter(|e| {
+            e.path()
+                .extension()
+                .and_then(|x| x.to_str())
+                .map(|ext| AUDIO_EXTS.contains(&ext.to_lowercase().as_str()))
+                .unwrap_or(false)
+        })
+        .filter_map(|e| camino::Utf8PathBuf::from_path_buf(e.into_path()).ok())
+        .map(crate::player::queue::TrackInfo::from_path)
+        .collect();
+
+    tracks.sort_by(|a, b| a.path.cmp(&b.path));
+    tracks
 }
 
 // ── Log helpers ───────────────────────────────────────────────────────────────
