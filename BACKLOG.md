@@ -160,13 +160,16 @@ for detailed architecture, crate choices, and sub-milestones.
       progreso + cola. Toggle `L`/`D` alterna source library / destino.
 - [ ] Add `rodio` (symphonia-all feature) to Cargo.toml.
 
-### 12-b · Player DSD + diff integration  (est. 2 weeks)
+### 12-b · Player DSD + diff integration  ·  *done*
 
-- [ ] DSD (DSF/DFF) via ffmpeg pipe → PCM 24/176.4 → rodio. Único caso
-      que requiere ffmpeg. ⚠ icon + mensaje claro cuando no está en PATH.
-- [ ] `space` keybind en diff view → push a cola del player → abre vista
-      player. Flujo "escucha antes de sincronizar".
-- [ ] Hi-res passthrough best-effort; WASAPI exclusive documentado como v1.0.
+- [x] DSD (DSF/DFF) via ffmpeg pipe → PCM f32le 176.4 kHz stereo →
+      rodio. `decoder::DsdSource` implementa `rodio::Source`. ⚠ mensaje
+      claro cuando ffmpeg no está en PATH; auto-avanza al siguiente track.
+- [x] `space` en diff view → encola track de la fuente en el player →
+      abre vista player. Maneja transcoded entries (usa extensión original).
+      Orphans muestran mensaje informativo. Flujo "escucha antes de sync".
+- [x] Hi-res passthrough best-effort vía cpal/WASAPI; exclusive mode
+      documentado como limitación hasta v1.0.
 
 ### 12-c · Audit  (est. 2 weeks)
 

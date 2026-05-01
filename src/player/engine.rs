@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use camino::Utf8Path;
 
+use crate::player::decoder;
 use crate::player::queue::{Queue, RepeatMode, TrackInfo};
 
 // ── Public command / event types ──────────────────────────────────────────────
@@ -197,11 +198,9 @@ impl Engine {
 
     fn play_current(&mut self) {
         let Some(track) = self.queue.current().cloned() else { return };
-        match open_source(&track.path) {
-            Ok(src) => {
-                self.sink.stop();
-                self.sink.append(src);
-                self.sink.play();
+        self.sink.stop();
+        match play_path(&self.sink, &track.path) {
+            Ok(()) => {
                 let _ = self.event_tx.send(PlayerEvent::TrackStarted(track));
                 self.track_done = false;
             }
@@ -219,13 +218,33 @@ impl Engine {
     }
 }
 
-/// Open a file and return a rodio Source. Uses rodio's symphonia backend.
-fn open_source(path: &Utf8Path) -> anyhow::Result<rodio::Decoder<BufReader<std::fs::File>>> {
-    let file = std::fs::File::open(path.as_std_path())
-        .map_err(|e| anyhow::anyhow!("cannot open {path}: {e}"))?;
-    let src = rodio::Decoder::new(BufReader::new(file))
-        .map_err(|e| anyhow::anyhow!("cannot decode {path}: {e}"))?;
-    Ok(src)
+/// Append the appropriate source to the sink and start playback.
+///
+/// - DSD (DSF/DFF): piped through ffmpeg → PCM f32le 176.4 kHz stereo.
+///   Returns an error with a clear ⚠ message if ffmpeg is not in PATH.
+/// - Everything else: decoded natively via rodio + symphonia.
+fn play_path(sink: &rodio::Sink, path: &Utf8Path) -> anyhow::Result<()> {
+    if decoder::is_dsd(path) {
+        match crate::transcode::ffmpeg::detect() {
+            None => anyhow::bail!(
+                "⚠  DSD playback requires ffmpeg in PATH — \
+                 install ffmpeg to play {}",
+                path.file_name().unwrap_or(path.as_str())
+            ),
+            Some(_) => {
+                let src = decoder::DsdSource::open(path)?;
+                sink.append(src);
+            }
+        }
+    } else {
+        let file = std::fs::File::open(path.as_std_path())
+            .map_err(|e| anyhow::anyhow!("cannot open {path}: {e}"))?;
+        let src = rodio::Decoder::new(BufReader::new(file))
+            .map_err(|e| anyhow::anyhow!("cannot decode {path}: {e}"))?;
+        sink.append(src);
+    }
+    sink.play();
+    Ok(())
 }
 
 // ── Public constructor ────────────────────────────────────────────────────────

@@ -188,6 +188,9 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
         (KeyCode::Char('y'), _) if app.view == View::Diff => {
             handle_sync_confirm(app);
         }
+        (KeyCode::Char(' '), _) if app.view == View::Diff => {
+            enqueue_diff_entry(app);
+        }
 
         _ => {}
     }
@@ -515,6 +518,53 @@ fn compute_diff(app: &mut App) {
             app.diff_state = DiffState::Error(format!("diff: {e}"));
         }
     }
+}
+
+// ── Diff → Player integration ─────────────────────────────────────────────────
+
+fn enqueue_diff_entry(app: &mut App) {
+    use crate::diff::EntryKind;
+
+    let (source, entry_path, transcode_from) = match &app.diff_state {
+        DiffState::Ready { result, source, .. } => {
+            let filter = app.diff_entry_filter;
+            let filtered: Vec<_> = result.plan.entries.iter()
+                .filter(|e| filter.matches(e.kind))
+                .collect();
+
+            let Some(entry) = filtered.get(app.diff_entry_idx) else { return };
+
+            if entry.kind == EntryKind::Orphan {
+                app.set_flash("orphans exist only on destination — use L/D in player to toggle");
+                return;
+            }
+
+            (source.clone(), entry.path.clone(), entry.transcode_from.clone())
+        }
+        _ => return,
+    };
+
+    // Resolve source path: use original extension for transcoded entries.
+    let src_path = if let Some(from_ext) = transcode_from {
+        source.join(entry_path.with_extension(from_ext))
+    } else {
+        source.join(&entry_path)
+    };
+
+    if !src_path.exists() {
+        app.set_flash(format!("not found on source: {src_path}"));
+        return;
+    }
+
+    app.enter_player();
+
+    let track = crate::player::queue::TrackInfo::from_path(src_path).with_tags();
+    if let Some(ref handle) = app.player_handle {
+        handle.send(crate::player::engine::PlayerCommand::Enqueue(track));
+    }
+
+    app.set_flash("track queued — opening player");
+    app.view = View::Player;
 }
 
 // ── Player key handler ────────────────────────────────────────────────────────

@@ -296,6 +296,8 @@ fn render_footer(f: &mut Frame, app: &App, theme: &Theme, area: ratatui::layout:
             Span::raw(" scroll  "),
             kb("tab", theme),
             Span::raw(" filter  "),
+            kb("space", theme),
+            Span::raw(" preview  "),
             kb("r", theme),
             Span::raw(" re-diff  "),
             kb("y", theme),
