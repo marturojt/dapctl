@@ -26,6 +26,10 @@ pub enum PlayerCommand {
     CycleRepeat,
     /// Seek to absolute position.
     Seek(Duration),
+    /// Seek relative to current position (positive = forward, negative = back).
+    SeekRelative(i64),
+    /// Set playback volume (0.0 = mute, 1.0 = 100%, 2.0 = 200%).
+    Volume(f32),
 }
 
 #[derive(Debug, Clone)]
@@ -37,11 +41,13 @@ pub enum PlayerEvent {
     QueueUpdated { tracks: Vec<TrackInfo>, cursor: usize },
     Stopped,
     DecodeError { path: String, err: String },
+    /// Background tag scan result for a single queue entry.
+    TrackMetadata { idx: usize, track: TrackInfo },
 }
 
 // ── Player state (returned by handle for TUI display) ─────────────────────────
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct PlayerStatus {
     pub current: Option<TrackInfo>,
     pub position: Duration,
@@ -50,6 +56,22 @@ pub struct PlayerStatus {
     pub queue_tracks: Vec<TrackInfo>,
     pub shuffle: bool,
     pub repeat: RepeatMode,
+    pub volume: f32,
+}
+
+impl Default for PlayerStatus {
+    fn default() -> Self {
+        Self {
+            current: None,
+            position: Duration::ZERO,
+            paused: false,
+            queue_cursor: 0,
+            queue_tracks: Vec::new(),
+            shuffle: false,
+            repeat: RepeatMode::Off,
+            volume: 1.0,
+        }
+    }
 }
 
 impl Default for RepeatMode {
@@ -142,10 +164,22 @@ impl Engine {
         match cmd {
             PlayerCommand::PlayQueue(tracks) => {
                 self.sink.stop();
-                self.queue.set(tracks);
+                self.queue.set(tracks.clone());
                 self.paused = false;
                 self.emit_queue_updated();
                 self.play_current();
+
+                // Spawn background tag scanner so the queue display fills in
+                // progressively without blocking the audio thread.
+                let tx = self.event_tx.clone();
+                std::thread::spawn(move || {
+                    for (idx, track) in tracks.into_iter().enumerate() {
+                        let tagged = track.with_tags();
+                        if tx.send(PlayerEvent::TrackMetadata { idx, track: tagged }).is_err() {
+                            break;
+                        }
+                    }
+                });
             }
             PlayerCommand::Enqueue(track) => {
                 self.queue.push(track);
@@ -195,6 +229,14 @@ impl Engine {
             PlayerCommand::Seek(pos) => {
                 let _ = self.sink.try_seek(pos);
             }
+            PlayerCommand::SeekRelative(delta_secs) => {
+                let pos = self.sink.get_pos();
+                let new_secs = (pos.as_secs_f64() + delta_secs as f64).max(0.0);
+                let _ = self.sink.try_seek(Duration::from_secs_f64(new_secs));
+            }
+            PlayerCommand::Volume(v) => {
+                self.sink.set_volume(v.clamp(0.0, 2.0));
+            }
         }
         true
     }
@@ -209,8 +251,18 @@ impl Engine {
     fn play_current(&mut self) {
         let Some(track) = self.queue.current().cloned() else { return };
         self.sink.stop();
+
+        // Load tags synchronously for the current track so Now Playing always
+        // shows full metadata (artist, album, duration). Brief IO (~few ms).
+        let track = track.with_tags();
+        if let Some(phys_idx) = self.queue.current_phys_idx() {
+            self.queue.update_at(phys_idx, track.clone());
+        }
+
         match play_path(&self.sink, &track.path) {
             Ok(()) => {
+                // Emit updated queue first so the TUI sees the tagged current entry.
+                self.emit_queue_updated();
                 let _ = self.event_tx.send(PlayerEvent::TrackStarted(track));
                 self.track_done = false;
             }

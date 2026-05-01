@@ -183,6 +183,18 @@ impl Queue {
         self.rebuild_shuffle();
     }
 
+    /// Update the track at physical index `phys_idx` with new data (e.g. loaded tags).
+    pub fn update_at(&mut self, phys_idx: usize, track: TrackInfo) {
+        if let Some(t) = self.tracks.get_mut(phys_idx) {
+            *t = track;
+        }
+    }
+
+    /// Physical index of the currently selected track (accounts for shuffle).
+    pub fn current_phys_idx(&self) -> Option<usize> {
+        self.effective_idx(self.cursor)
+    }
+
     fn effective_idx(&self, cursor: usize) -> Option<usize> {
         if self.tracks.is_empty() {
             return None;
