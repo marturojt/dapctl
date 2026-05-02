@@ -16,7 +16,13 @@ pub fn render(f: &mut Frame, app: &App) {
 
     let profile_info = app
         .selected_profile()
-        .map(|p| format!("  profile: {}  ({})", p.profile.name, format!("{:?}", p.profile.mode).to_lowercase()))
+        .map(|p| {
+            format!(
+                "  profile: {}  ({})",
+                p.profile.name,
+                format!("{:?}", p.profile.mode).to_lowercase()
+            )
+        })
         .unwrap_or_default();
 
     let outer = Block::bordered()
@@ -39,17 +45,19 @@ pub fn render(f: &mut Frame, app: &App) {
 
     f.render_widget(
         Paragraph::new(vec![
-            Line::from(
-                format!("  {view_name} view — coming in the next milestone")
-            )
-            .alignment(Alignment::Center),
+            Line::from(format!("  {view_name} view — coming in the next milestone"))
+                .alignment(Alignment::Center),
             Line::from("").alignment(Alignment::Center),
             Line::from(profile_info)
                 .style(Style::default().fg(theme.muted))
                 .alignment(Alignment::Center),
             Line::from("").alignment(Alignment::Center),
             Line::from("  esc / q  →  back to profiles")
-                .style(Style::default().fg(theme.muted).add_modifier(Modifier::ITALIC))
+                .style(
+                    Style::default()
+                        .fg(theme.muted)
+                        .add_modifier(Modifier::ITALIC),
+                )
                 .alignment(Alignment::Center),
         ])
         .style(Style::default().fg(theme.fg)),

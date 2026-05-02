@@ -28,11 +28,15 @@ impl DsdSource {
     pub fn open(path: &Utf8Path) -> anyhow::Result<Self> {
         let mut child = Command::new("ffmpeg")
             .args([
-                "-i", path.as_str(),
-                "-f", "f32le",
-                "-ar", "176400",
-                "-ac", "2",
-                "-vn",        // no video
+                "-i",
+                path.as_str(),
+                "-f",
+                "f32le",
+                "-ar",
+                "176400",
+                "-ac",
+                "2",
+                "-vn", // no video
                 "pipe:1",
             ])
             .stdout(Stdio::piped())

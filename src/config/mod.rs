@@ -15,8 +15,8 @@ pub use schema::{Filters, Mode, SyncProfile, Transcode, TranscodeRule, Transfer,
 pub fn load(path: &Path) -> anyhow::Result<SyncProfile> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("cannot read sync profile {path:?}"))?;
-    let profile: SyncProfile = toml::from_str(&content)
-        .with_context(|| format!("invalid sync profile {path:?}"))?;
+    let profile: SyncProfile =
+        toml::from_str(&content).with_context(|| format!("invalid sync profile {path:?}"))?;
     validate(&profile).with_context(|| format!("sync profile {path:?} failed validation"))?;
     Ok(profile)
 }
@@ -51,8 +51,8 @@ pub fn discover() -> anyhow::Result<Vec<(String, PathBuf)>> {
         return Ok(Vec::new());
     }
     let mut profiles = Vec::new();
-    for entry in std::fs::read_dir(&dir)
-        .with_context(|| format!("cannot read config dir {dir:?}"))?
+    for entry in
+        std::fs::read_dir(&dir).with_context(|| format!("cannot read config dir {dir:?}"))?
     {
         let entry = entry?;
         let path = entry.path();

@@ -3,7 +3,7 @@ use std::sync::mpsc::Sender;
 use std::time::UNIX_EPOCH;
 
 use camino::Utf8PathBuf;
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 
 use crate::player::library::LibraryIndex;
 use crate::player::queue::TrackInfo;
@@ -11,8 +11,8 @@ use crate::player::queue::TrackInfo;
 const SCHEMA_VERSION: u32 = 1;
 
 const AUDIO_EXTS: &[&str] = &[
-    "flac", "mp3", "aac", "ogg", "opus", "wav", "alac", "m4a",
-    "dsf", "dff", "wv", "wma", "aiff", "aif", "ape",
+    "flac", "mp3", "aac", "ogg", "opus", "wav", "alac", "m4a", "dsf", "dff", "wv", "wma", "aiff",
+    "aif", "ape",
 ];
 
 pub enum ScanEvent {
@@ -185,10 +185,13 @@ fn run_scan(root: Utf8PathBuf, tx: &Sender<ScanEvent>) -> anyhow::Result<()> {
 
         let to_delete: Vec<String> = {
             let mut stmt = conn.prepare("SELECT path FROM tracks")?;
-            let all: Vec<String> = stmt.query_map([], |r| r.get(0))?
+            let all: Vec<String> = stmt
+                .query_map([], |r| r.get(0))?
                 .filter_map(|r| r.ok())
                 .collect();
-            all.into_iter().filter(|p| !path_set.contains(p.as_str())).collect()
+            all.into_iter()
+                .filter(|p| !path_set.contains(p.as_str()))
+                .collect()
         };
 
         if !to_delete.is_empty() {
@@ -231,50 +234,52 @@ fn run_scan(root: Utf8PathBuf, tx: &Sender<ScanEvent>) -> anyhow::Result<()> {
             channels: Option<i64>,
         }
 
-        let rows: Vec<Row> = stmt.query_map([], |r| {
-            Ok(Row {
-                path:           r.get(0)?,
-                title:          r.get(1)?,
-                artist:         r.get(2)?,
-                album_artist:   r.get(3)?,
-                album:          r.get(4)?,
-                track_number:   r.get(5)?,
-                disc_number:    r.get(6)?,
-                year:           r.get(7)?,
-                genre:          r.get(8)?,
-                duration_secs:  r.get(9)?,
-                sample_rate_hz: r.get(10)?,
-                bit_depth:      r.get(11)?,
-                bitrate_kbps:   r.get(12)?,
-                channels:       r.get(13)?,
-            })
-        })?
-        .filter_map(|r| r.ok())
-        .collect();
+        let rows: Vec<Row> = stmt
+            .query_map([], |r| {
+                Ok(Row {
+                    path: r.get(0)?,
+                    title: r.get(1)?,
+                    artist: r.get(2)?,
+                    album_artist: r.get(3)?,
+                    album: r.get(4)?,
+                    track_number: r.get(5)?,
+                    disc_number: r.get(6)?,
+                    year: r.get(7)?,
+                    genre: r.get(8)?,
+                    duration_secs: r.get(9)?,
+                    sample_rate_hz: r.get(10)?,
+                    bit_depth: r.get(11)?,
+                    bitrate_kbps: r.get(12)?,
+                    channels: r.get(13)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
 
-        rows.into_iter().map(|row| {
-            let path = Utf8PathBuf::from(&row.path);
-            let title = row.title.unwrap_or_else(|| {
-                path.file_stem().unwrap_or("unknown").to_owned()
-            });
-            TrackInfo {
-                path,
-                title,
-                artist:         row.artist,
-                album_artist:   row.album_artist,
-                album:          row.album,
-                track_number:   row.track_number.map(|n| n as u32),
-                disc_number:    row.disc_number.map(|n| n as u32),
-                year:           row.year.map(|n| n as u32),
-                genre:          row.genre,
-                duration_secs:  row.duration_secs,
-                sample_rate_hz: row.sample_rate_hz.map(|n| n as u32),
-                bit_depth:      row.bit_depth.map(|n| n as u8),
-                bitrate_kbps:   row.bitrate_kbps.map(|n| n as u32),
-                channels:       row.channels.map(|n| n as u8),
-            }
-        })
-        .collect()
+        rows.into_iter()
+            .map(|row| {
+                let path = Utf8PathBuf::from(&row.path);
+                let title = row
+                    .title
+                    .unwrap_or_else(|| path.file_stem().unwrap_or("unknown").to_owned());
+                TrackInfo {
+                    path,
+                    title,
+                    artist: row.artist,
+                    album_artist: row.album_artist,
+                    album: row.album,
+                    track_number: row.track_number.map(|n| n as u32),
+                    disc_number: row.disc_number.map(|n| n as u32),
+                    year: row.year.map(|n| n as u32),
+                    genre: row.genre,
+                    duration_secs: row.duration_secs,
+                    sample_rate_hz: row.sample_rate_hz.map(|n| n as u32),
+                    bit_depth: row.bit_depth.map(|n| n as u8),
+                    bitrate_kbps: row.bitrate_kbps.map(|n| n as u32),
+                    channels: row.channels.map(|n| n as u8),
+                }
+            })
+            .collect()
     };
 
     let index = LibraryIndex::from_tracks(tracks, &root);

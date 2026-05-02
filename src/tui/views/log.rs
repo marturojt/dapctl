@@ -40,11 +40,16 @@ pub fn render(f: &mut Frame, app: &App) {
     // ── Footer ────────────────────────────────────────────────────────────
     f.render_widget(
         Paragraph::new(Line::from(vec![
-            kb("j/k"),   Span::raw(" scroll  "),
-            kb("g"),     Span::raw(" top  "),
-            kb("G"),     Span::raw(" bottom  "),
-            kb("r"),     Span::raw(" reload  "),
-            kb("q"),     Span::raw(" back"),
+            kb("j/k"),
+            Span::raw(" scroll  "),
+            kb("g"),
+            Span::raw(" top  "),
+            kb("G"),
+            Span::raw(" bottom  "),
+            kb("r"),
+            Span::raw(" reload  "),
+            kb("q"),
+            Span::raw(" back"),
         ]))
         .style(Style::default().fg(theme.muted)),
         footer_area,
@@ -63,48 +68,48 @@ pub fn render(f: &mut Frame, app: &App) {
         return;
     }
 
-    let items: Vec<ListItem> = app.log_lines.iter().map(|entry| {
-        let level_color = match entry.level {
-            LogLevel::Info  => theme.fg,
-            LogLevel::Warn  => theme.warn,
-            LogLevel::Error => theme.err,
-            LogLevel::Other => theme.muted,
-        };
+    let items: Vec<ListItem> = app
+        .log_lines
+        .iter()
+        .map(|entry| {
+            let level_color = match entry.level {
+                LogLevel::Info => theme.fg,
+                LogLevel::Warn => theme.warn,
+                LogLevel::Error => theme.err,
+                LogLevel::Other => theme.muted,
+            };
 
-        let mut spans = vec![
-            Span::styled(
-                format!("  {}  ", entry.time),
-                Style::default().fg(theme.muted),
-            ),
-            Span::styled(
-                format!("{:<5}  ", entry.level_str()),
-                Style::default().fg(level_color),
-            ),
-            Span::styled(
-                format!("{:<16}", entry.event),
-                Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
-            ),
-        ];
-        if !entry.detail.is_empty() {
-            spans.push(Span::styled(
-                format!("  {}", entry.detail),
-                Style::default().fg(theme.muted),
-            ));
-        }
+            let mut spans = vec![
+                Span::styled(
+                    format!("  {}  ", entry.time),
+                    Style::default().fg(theme.muted),
+                ),
+                Span::styled(
+                    format!("{:<5}  ", entry.level_str()),
+                    Style::default().fg(level_color),
+                ),
+                Span::styled(
+                    format!("{:<16}", entry.event),
+                    Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
+                ),
+            ];
+            if !entry.detail.is_empty() {
+                spans.push(Span::styled(
+                    format!("  {}", entry.detail),
+                    Style::default().fg(theme.muted),
+                ));
+            }
 
-        ListItem::new(Line::from(spans))
-    }).collect();
+            ListItem::new(Line::from(spans))
+        })
+        .collect();
 
     let visible = list_area.height as usize;
     let scroll = app.log_scroll.saturating_sub(visible.saturating_sub(1) / 2);
 
     let list = List::new(items)
         .style(Style::default().bg(theme.bg))
-        .highlight_style(
-            Style::default()
-                .fg(theme.sel_fg)
-                .bg(theme.sel_bg),
-        );
+        .highlight_style(Style::default().fg(theme.sel_fg).bg(theme.sel_bg));
 
     let mut state = ListState::default()
         .with_selected(Some(app.log_scroll))

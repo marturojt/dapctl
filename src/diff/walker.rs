@@ -190,19 +190,31 @@ fn tag_matches(path: &std::path::Path, f: &Filters) -> bool {
         .unwrap_or_default();
 
     if !f.include_artists.is_empty()
-        && !f.include_artists.iter().any(|a| a.to_lowercase() == artist_lc)
+        && !f
+            .include_artists
+            .iter()
+            .any(|a| a.to_lowercase() == artist_lc)
     {
         return false;
     }
-    if f.exclude_artists.iter().any(|a| a.to_lowercase() == artist_lc) {
+    if f.exclude_artists
+        .iter()
+        .any(|a| a.to_lowercase() == artist_lc)
+    {
         return false;
     }
     if !f.include_genres.is_empty()
-        && !f.include_genres.iter().any(|g| g.to_lowercase() == genre_lc)
+        && !f
+            .include_genres
+            .iter()
+            .any(|g| g.to_lowercase() == genre_lc)
     {
         return false;
     }
-    if f.exclude_genres.iter().any(|g| g.to_lowercase() == genre_lc) {
+    if f.exclude_genres
+        .iter()
+        .any(|g| g.to_lowercase() == genre_lc)
+    {
         return false;
     }
 

@@ -65,15 +65,17 @@ fn load_builtin(id: &str) -> anyhow::Result<DapProfile> {
             )
         })?;
 
-    toml::from_str(toml_str)
-        .with_context(|| format!("failed to parse builtin DAP profile {id:?}"))
+    toml::from_str(toml_str).with_context(|| format!("failed to parse builtin DAP profile {id:?}"))
 }
 
 fn load_user_override(id: &str) -> anyhow::Result<Option<DapProfile>> {
     let Some(dirs) = directories::ProjectDirs::from("", "", "dapctl") else {
         return Ok(None);
     };
-    let path = dirs.config_dir().join("profiles").join(format!("{id}.toml"));
+    let path = dirs
+        .config_dir()
+        .join("profiles")
+        .join(format!("{id}.toml"));
     if !path.exists() {
         return Ok(None);
     }

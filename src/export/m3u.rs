@@ -13,10 +13,7 @@ use crate::diff::walker::{self, Entry};
 /// placed on the DAP's storage.
 ///
 /// Returns the M3U content as a `String`.
-pub fn generate(
-    profile: &ResolvedProfile,
-    source: &Utf8Path,
-) -> anyhow::Result<String> {
+pub fn generate(profile: &ResolvedProfile, source: &Utf8Path) -> anyhow::Result<String> {
     let exclude = profile.build_exclude_set()?;
     let include = profile.build_include_set()?;
     let transcode_rules = if profile.sync.transcode.enabled {
@@ -25,8 +22,14 @@ pub fn generate(
         &[]
     };
 
-    let entries: Vec<Entry> =
-        walker::walk(source, &exclude, include.as_ref(), false, &profile.sync.filters, transcode_rules)?;
+    let entries: Vec<Entry> = walker::walk(
+        source,
+        &exclude,
+        include.as_ref(),
+        false,
+        &profile.sync.filters,
+        transcode_rules,
+    )?;
 
     let music_root = profile.dap.layout.music_root.trim_end_matches('/');
     let mut out = String::from("#EXTM3U\n");

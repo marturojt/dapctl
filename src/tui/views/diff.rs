@@ -21,8 +21,26 @@ pub fn render(f: &mut Frame, app: &App) {
         DiffState::Idle => render_idle(f, app, area),
         DiffState::Loading => render_loading(f, app, area),
         DiffState::Error(msg) => render_error(f, app, area, msg),
-        DiffState::Ready { result, source, destination, profile_name, dap_id, mode } => {
-            render_ready(f, app, theme, area, result, source, destination, profile_name, dap_id, *mode);
+        DiffState::Ready {
+            result,
+            source,
+            destination,
+            profile_name,
+            dap_id,
+            mode,
+        } => {
+            render_ready(
+                f,
+                app,
+                theme,
+                area,
+                result,
+                source,
+                destination,
+                profile_name,
+                dap_id,
+                *mode,
+            );
         }
     }
 }
@@ -45,7 +63,9 @@ fn render_loading(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     f.render_widget(
         Paragraph::new(Line::from(Span::styled(
             "  Computing diff…",
-            Style::default().fg(theme.muted).add_modifier(Modifier::ITALIC),
+            Style::default()
+                .fg(theme.muted)
+                .add_modifier(Modifier::ITALIC),
         )))
         .alignment(Alignment::Center),
         center,
@@ -58,9 +78,12 @@ fn render_idle(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     f.render_widget(outer, area);
     let theme = &app.theme;
 
-    let [_, center, _] =
-        Layout::vertical([Constraint::Fill(1), Constraint::Length(1), Constraint::Fill(1)])
-            .areas(inner);
+    let [_, center, _] = Layout::vertical([
+        Constraint::Fill(1),
+        Constraint::Length(1),
+        Constraint::Fill(1),
+    ])
+    .areas(inner);
 
     f.render_widget(
         Paragraph::new(Line::from(Span::styled(
@@ -78,15 +101,27 @@ fn render_error(f: &mut Frame, app: &App, area: ratatui::layout::Rect, msg: &str
     let inner = outer.inner(area);
     f.render_widget(outer, area);
 
-    let [_, center, _] =
-        Layout::vertical([Constraint::Fill(1), Constraint::Length(3), Constraint::Fill(1)])
-            .areas(inner);
+    let [_, center, _] = Layout::vertical([
+        Constraint::Fill(1),
+        Constraint::Length(3),
+        Constraint::Fill(1),
+    ])
+    .areas(inner);
 
     f.render_widget(
         Paragraph::new(vec![
-            Line::from(Span::styled("  Error", Style::default().fg(theme.err).add_modifier(Modifier::BOLD))),
-            Line::from(Span::styled(format!("  {msg}"), Style::default().fg(theme.err))),
-            Line::from(Span::styled("  press esc to go back", Style::default().fg(theme.muted))),
+            Line::from(Span::styled(
+                "  Error",
+                Style::default().fg(theme.err).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(Span::styled(
+                format!("  {msg}"),
+                Style::default().fg(theme.err),
+            )),
+            Line::from(Span::styled(
+                "  press esc to go back",
+                Style::default().fg(theme.muted),
+            )),
         ]),
         center,
     );
@@ -123,7 +158,16 @@ fn render_ready(
     ])
     .areas(inner);
 
-    render_summary(f, theme, summary_area, plan, source, destination, dap_id, mode);
+    render_summary(
+        f,
+        theme,
+        summary_area,
+        plan,
+        source,
+        destination,
+        dap_id,
+        mode,
+    );
     render_list_header(f, theme, list_header_area, app, plan);
     render_entry_list(f, app, theme, list_area, plan);
     render_footer(f, app, theme, footer_area);
@@ -157,33 +201,75 @@ fn render_summary(
             Span::styled(format!("  {src_short}"), Style::default().fg(theme.fg)),
             Span::styled("  →  ", Style::default().fg(theme.muted)),
             Span::styled(dst_short.to_string(), Style::default().fg(theme.fg)),
-            Span::styled(format!("  ({dap_id}, {mode_str})"), Style::default().fg(theme.muted)),
+            Span::styled(
+                format!("  ({dap_id}, {mode_str})"),
+                Style::default().fg(theme.muted),
+            ),
         ]),
         Line::from(""),
         // counts
         Line::from(vec![
-            Span::styled("  [+]", Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)),
-            Span::raw(format!("  {:>6}  new          {}", plan.count(EntryKind::New), fmt_bytes(new_b))),
+            Span::styled(
+                "  [+]",
+                Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(format!(
+                "  {:>6}  new          {}",
+                plan.count(EntryKind::New),
+                fmt_bytes(new_b)
+            )),
         ]),
         Line::from(vec![
-            Span::styled("  [~]", Style::default().fg(theme.warn).add_modifier(Modifier::BOLD)),
-            Span::raw(format!("  {:>6}  modified     {}", plan.count(EntryKind::Modified), fmt_bytes(mod_b))),
+            Span::styled(
+                "  [~]",
+                Style::default().fg(theme.warn).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(format!(
+                "  {:>6}  modified     {}",
+                plan.count(EntryKind::Modified),
+                fmt_bytes(mod_b)
+            )),
         ]),
         Line::from(vec![
-            Span::styled("  [-]", Style::default().fg(theme.err).add_modifier(Modifier::BOLD)),
-            Span::raw(format!("  {:>6}  orphans      {}", plan.count(EntryKind::Orphan), fmt_bytes(orp_b))),
+            Span::styled(
+                "  [-]",
+                Style::default().fg(theme.err).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(format!(
+                "  {:>6}  orphans      {}",
+                plan.count(EntryKind::Orphan),
+                fmt_bytes(orp_b)
+            )),
         ]),
         Line::from(vec![
-            Span::styled("  [=]", Style::default().fg(theme.muted).add_modifier(Modifier::BOLD)),
-            Span::styled(format!("  {:>6}  unchanged    {}", plan.count(EntryKind::Same), fmt_bytes(same_b)), Style::default().fg(theme.muted)),
+            Span::styled(
+                "  [=]",
+                Style::default()
+                    .fg(theme.muted)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!(
+                    "  {:>6}  unchanged    {}",
+                    plan.count(EntryKind::Same),
+                    fmt_bytes(same_b)
+                ),
+                Style::default().fg(theme.muted),
+            ),
         ]),
         Line::from(""),
         // ETA
         Line::from(vec![
             Span::raw("  transfer: "),
-            Span::styled(fmt_bytes(transfer), Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                fmt_bytes(transfer),
+                Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
+            ),
             Span::raw("   ETA: "),
-            Span::styled(fmt_eta(eta), Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                fmt_eta(eta),
+                Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
+            ),
         ]),
         Line::from(""),
     ];
@@ -202,13 +288,19 @@ fn render_list_header(
     plan: &crate::diff::Plan,
 ) {
     let filter = app.diff_entry_filter;
-    let total = plan.entries.iter().filter(|e| filter.matches(e.kind)).count();
+    let total = plan
+        .entries
+        .iter()
+        .filter(|e| filter.matches(e.kind))
+        .count();
 
     let line = Line::from(vec![
         Span::raw("  "),
         Span::styled(
             filter.label(),
-            Style::default().fg(theme.fg).add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+            Style::default()
+                .fg(theme.fg)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         ),
         Span::styled(
             format!("  ({total} entries)   tab to cycle filter"),
@@ -232,8 +324,11 @@ fn render_entry_list(
     let filter = app.diff_entry_filter;
     let path_width = (area.width as usize).saturating_sub(20).max(30);
 
-    let filtered: Vec<&crate::diff::Entry> =
-        plan.entries.iter().filter(|e| filter.matches(e.kind)).collect();
+    let filtered: Vec<&crate::diff::Entry> = plan
+        .entries
+        .iter()
+        .filter(|e| filter.matches(e.kind))
+        .collect();
 
     let items: Vec<ListItem> = filtered
         .iter()
@@ -258,10 +353,7 @@ fn render_entry_list(
                         Style::default().fg(theme.fg)
                     },
                 ),
-                Span::styled(
-                    format!("  {size:>10}"),
-                    Style::default().fg(theme.muted),
-                ),
+                Span::styled(format!("  {size:>10}"), Style::default().fg(theme.muted)),
             ]))
         })
         .collect();
@@ -316,11 +408,13 @@ fn render_footer(f: &mut Frame, app: &App, theme: &Theme, area: ratatui::layout:
 
 fn chrome<'a>(app: &'a App, title: &'a str) -> Block<'a> {
     Block::bordered()
-        .title(Line::from(title).style(
-            Style::default()
-                .fg(app.theme.fg)
-                .add_modifier(Modifier::BOLD),
-        ))
+        .title(
+            Line::from(title).style(
+                Style::default()
+                    .fg(app.theme.fg)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        )
         .border_style(Style::default().fg(app.theme.muted))
         .style(Style::default().bg(app.theme.bg))
 }

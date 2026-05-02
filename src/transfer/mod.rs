@@ -5,7 +5,7 @@ pub mod executor;
 pub mod manifest;
 pub mod verify;
 
-pub use executor::{Options, Stats, SyncMode, execute, repair_dest_mtimes};
+pub use executor::{execute, repair_dest_mtimes, Options, Stats, SyncMode};
 
 use serde::{Deserialize, Serialize};
 

@@ -31,7 +31,9 @@ pub enum LibraryNode {
 
 impl LibraryIndex {
     pub fn empty() -> Self {
-        Self { artists: Vec::new() }
+        Self {
+            artists: Vec::new(),
+        }
     }
 
     /// Build from a flat track list.
@@ -40,8 +42,12 @@ impl LibraryIndex {
         let mut tree: BTreeMap<String, BTreeMap<String, Vec<TrackInfo>>> = BTreeMap::new();
         for track in tracks {
             let artist = group_artist(&track, root);
-            let album  = group_album(&track, root);
-            tree.entry(artist).or_default().entry(album).or_default().push(track);
+            let album = group_album(&track, root);
+            tree.entry(artist)
+                .or_default()
+                .entry(album)
+                .or_default()
+                .push(track);
         }
         let artists = tree
             .into_iter()
@@ -75,9 +81,12 @@ impl LibraryIndex {
 
         for (ai, artist) in self.artists.iter().enumerate() {
             let artist_match = q.is_empty() || artist.name.to_lowercase().contains(&q);
-            let album_match  = artist.albums.iter().any(|al| {
+            let album_match = artist.albums.iter().any(|al| {
                 al.name.to_lowercase().contains(&q)
-                    || al.tracks.iter().any(|t| t.title.to_lowercase().contains(&q))
+                    || al
+                        .tracks
+                        .iter()
+                        .any(|t| t.title.to_lowercase().contains(&q))
             });
 
             if !artist_match && !album_match {
@@ -92,9 +101,15 @@ impl LibraryIndex {
                     let ok = q.is_empty()
                         || artist_match
                         || album.name.to_lowercase().contains(&q)
-                        || album.tracks.iter().any(|t| t.title.to_lowercase().contains(&q));
+                        || album
+                            .tracks
+                            .iter()
+                            .any(|t| t.title.to_lowercase().contains(&q));
                     if ok {
-                        out.push(LibraryNode::Album { artist: ai, album: ali });
+                        out.push(LibraryNode::Album {
+                            artist: ai,
+                            album: ali,
+                        });
                     }
                 }
             }
@@ -106,7 +121,9 @@ impl LibraryIndex {
 // ── Grouping helpers ──────────────────────────────────────────────────────────
 
 fn group_artist(track: &TrackInfo, root: &Utf8Path) -> String {
-    track.album_artist.as_deref()
+    track
+        .album_artist
+        .as_deref()
         .or(track.artist.as_deref())
         .filter(|s| !s.is_empty())
         .map(|s| s.to_owned())
@@ -114,7 +131,9 @@ fn group_artist(track: &TrackInfo, root: &Utf8Path) -> String {
 }
 
 fn group_album(track: &TrackInfo, root: &Utf8Path) -> String {
-    track.album.as_deref()
+    track
+        .album
+        .as_deref()
         .filter(|s| !s.is_empty())
         .map(|s| s.to_owned())
         .unwrap_or_else(|| path_album(&track.path, root))
@@ -130,10 +149,18 @@ fn rel_components<'a>(path: &'a Utf8Path, root: &Utf8Path) -> Vec<&'a str> {
 
 fn path_artist(path: &Utf8Path, root: &Utf8Path) -> String {
     let c = rel_components(path, root);
-    if c.len() >= 2 { c[0].to_owned() } else { "Unknown Artist".to_owned() }
+    if c.len() >= 2 {
+        c[0].to_owned()
+    } else {
+        "Unknown Artist".to_owned()
+    }
 }
 
 fn path_album(path: &Utf8Path, root: &Utf8Path) -> String {
     let c = rel_components(path, root);
-    if c.len() >= 3 { c[1].to_owned() } else { "Unknown Album".to_owned() }
+    if c.len() >= 3 {
+        c[1].to_owned()
+    } else {
+        "Unknown Album".to_owned()
+    }
 }

@@ -10,10 +10,10 @@ use assert_fs::TempDir;
 use camino::Utf8PathBuf;
 use globset::GlobSetBuilder;
 
-use dapctl::diff::EntryKind;
+use dapctl::config::{Filters, Verify};
 use dapctl::diff::compare::compare;
 use dapctl::diff::walker::walk;
-use dapctl::config::{Filters, Verify};
+use dapctl::diff::EntryKind;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -73,7 +73,10 @@ fn walker_finds_nested_files() {
 
     let paths: Vec<_> = entries.iter().map(|e| e.rel.as_str()).collect();
     assert!(paths.contains(&"a.flac"), "root file missing");
-    assert!(paths.contains(&"artist/album/track.flac"), "nested file missing");
+    assert!(
+        paths.contains(&"artist/album/track.flac"),
+        "nested file missing"
+    );
 }
 
 #[test]
@@ -94,8 +97,8 @@ fn walker_entries_are_sorted() {
 fn walker_exclude_glob_skips_matching_files() {
     let dir = TempDir::new().unwrap();
     write_file(&dir, "music/track.flac", b"flac");
-    write_file(&dir, "music/cover.jpg",  b"jpg");
-    write_file(&dir, ".DS_Store",        b"junk");
+    write_file(&dir, "music/cover.jpg", b"jpg");
+    write_file(&dir, ".DS_Store", b"junk");
 
     let exclude = {
         let mut b = GlobSetBuilder::new();
@@ -114,8 +117,8 @@ fn walker_exclude_glob_skips_matching_files() {
 fn walker_include_glob_filters_to_matching_only() {
     let dir = TempDir::new().unwrap();
     write_file(&dir, "track.flac", b"flac");
-    write_file(&dir, "track.mp3",  b"mp3");
-    write_file(&dir, "cover.jpg",  b"jpg");
+    write_file(&dir, "track.mp3", b"mp3");
+    write_file(&dir, "cover.jpg", b"jpg");
 
     let include = {
         let mut b = GlobSetBuilder::new();
@@ -123,7 +126,15 @@ fn walker_include_glob_filters_to_matching_only() {
         b.build().unwrap()
     };
     let root = Utf8PathBuf::from_path_buf(dir.path().to_owned()).unwrap();
-    let entries = walk(&root, &empty_globset(), Some(&include), false, &no_tag_filters(), &[]).unwrap();
+    let entries = walk(
+        &root,
+        &empty_globset(),
+        Some(&include),
+        false,
+        &no_tag_filters(),
+        &[],
+    )
+    .unwrap();
 
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].rel.as_str(), "track.flac");
@@ -271,8 +282,8 @@ fn diff_mixed_scenario() {
     let dst = TempDir::new().unwrap();
 
     // Same: identical content + mtime
-    write_file(&src, "same.flac",     &[1u8; 100]);
-    write_file(&dst, "same.flac",     &[1u8; 100]);
+    write_file(&src, "same.flac", &[1u8; 100]);
+    write_file(&dst, "same.flac", &[1u8; 100]);
     set_mtime(&src, "same.flac", 1_700_000_000);
     set_mtime(&dst, "same.flac", 1_700_000_000);
 
@@ -283,20 +294,24 @@ fn diff_mixed_scenario() {
     set_mtime(&dst, "modified.flac", 1_700_000_000);
 
     // New: only in source
-    write_file(&src, "new.flac",      &[3u8; 300]);
+    write_file(&src, "new.flac", &[3u8; 300]);
 
     // Orphan: only in destination
-    write_file(&dst, "orphan.flac",   &[4u8; 400]);
+    write_file(&dst, "orphan.flac", &[4u8; 400]);
 
     let se = walk_dir(&src);
     let de = walk_dir(&dst);
     let plan = compare(&se, &de, Verify::SizeMtime);
 
-    assert_eq!(plan.count(EntryKind::New),      1, "new");
+    assert_eq!(plan.count(EntryKind::New), 1, "new");
     assert_eq!(plan.count(EntryKind::Modified), 1, "modified");
-    assert_eq!(plan.count(EntryKind::Orphan),   1, "orphan");
-    assert_eq!(plan.count(EntryKind::Same),     1, "same");
-    assert_eq!(plan.transfer_bytes(), 200 + 300, "transfer bytes = modified + new");
+    assert_eq!(plan.count(EntryKind::Orphan), 1, "orphan");
+    assert_eq!(plan.count(EntryKind::Same), 1, "same");
+    assert_eq!(
+        plan.transfer_bytes(),
+        200 + 300,
+        "transfer bytes = modified + new"
+    );
 }
 
 #[test]
@@ -316,10 +331,17 @@ fn diff_checksum_detects_silent_corruption() {
     // Verify hashes were computed.
     assert!(se[0].hash.is_some(), "src hash should be populated");
     assert!(de[0].hash.is_some(), "dst hash should be populated");
-    assert_ne!(se[0].hash, de[0].hash, "hashes should differ for different content");
+    assert_ne!(
+        se[0].hash, de[0].hash,
+        "hashes should differ for different content"
+    );
 
     let plan = compare(&se, &de, Verify::Checksum);
-    assert_eq!(plan.count(EntryKind::Modified), 1, "checksum must detect content mismatch");
+    assert_eq!(
+        plan.count(EntryKind::Modified),
+        1,
+        "checksum must detect content mismatch"
+    );
     assert_eq!(plan.count(EntryKind::Same), 0);
 }
 
@@ -338,7 +360,11 @@ fn diff_checksum_same_content_is_same() {
     let plan = compare(&se, &de, Verify::Checksum);
 
     // Checksum trusts the content over mtime.
-    assert_eq!(plan.count(EntryKind::Same), 1, "identical content → Same even with mtime drift");
+    assert_eq!(
+        plan.count(EntryKind::Same),
+        1,
+        "identical content → Same even with mtime drift"
+    );
     assert_eq!(plan.count(EntryKind::Modified), 0);
 }
 
@@ -349,7 +375,7 @@ fn tag_filter_inactive_by_default() {
     // Filters::default() has no tag filters — all files pass, same as before.
     let dir = TempDir::new().unwrap();
     write_file(&dir, "a.flac", b"data");
-    write_file(&dir, "b.mp3",  b"data");
+    write_file(&dir, "b.mp3", b"data");
 
     let entries = walk_dir(&dir);
     assert_eq!(entries.len(), 2, "default filters must not drop any files");
@@ -369,7 +395,11 @@ fn tag_filter_unreadable_file_passes_gracefully() {
     };
     let entries = walk(&root, &empty_globset(), None, false, &filters, &[]).unwrap();
 
-    assert_eq!(entries.len(), 1, "unreadable file must pass tag filters (graceful degradation)");
+    assert_eq!(
+        entries.len(),
+        1,
+        "unreadable file must pass tag filters (graceful degradation)"
+    );
 }
 
 #[test]
@@ -407,7 +437,11 @@ fn tag_filter_include_artist_excludes_non_matching() {
     };
     // File is unreadable → lofty returns error → passes through untouched.
     let entries = walk(&root, &empty_globset(), None, false, &filters, &[]).unwrap();
-    assert_eq!(entries.len(), 1, "unreadable file passes even artist include filter");
+    assert_eq!(
+        entries.len(),
+        1,
+        "unreadable file passes even artist include filter"
+    );
 }
 
 #[test]

@@ -53,7 +53,9 @@ fn event_loop(
         // Trigger diff computation the frame after its "Computing…" screen.
         if matches!(app.diff_state, DiffState::Loading) {
             compute_diff(app);
-            if app.should_quit { break; }
+            if app.should_quit {
+                break;
+            }
             continue;
         }
 
@@ -76,14 +78,16 @@ fn event_loop(
 
         app.tick_flash();
 
-        if app.should_quit { break; }
+        if app.should_quit {
+            break;
+        }
     }
     Ok(())
 }
 
 fn draw(f: &mut ratatui::Frame, app: &mut App) {
     match app.view {
-        View::Home     => views::home::render(f, app),
+        View::Home => views::home::render(f, app),
         View::Profiles => views::profiles::render(f, app),
         View::Diff => views::diff::render(f, app),
         View::Progress => views::progress::render(f, app),
@@ -104,11 +108,13 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
         }
 
         (KeyCode::Char('q'), _) => match app.view {
-            View::Home     => app.should_quit = true,
+            View::Home => app.should_quit = true,
             View::Profiles => app.view = View::Home,
             View::Progress => {
                 let done = app.progress_state.as_ref().is_some_and(|p| p.finished);
-                if done { app.view = View::Home; }
+                if done {
+                    app.view = View::Home;
+                }
             }
             _ => {
                 app.view = View::Profiles;
@@ -117,18 +123,18 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
         },
         (KeyCode::Char('l'), _) if app.view == View::Progress => {
             let done = app.progress_state.as_ref().is_some_and(|p| p.finished);
-            if done { app.load_log(); }
-        }
-
-        (KeyCode::Esc, _) if app.view != View::Progress => {
-            match app.view {
-                View::Home | View::Profiles => {}
-                _ => {
-                    app.view = View::Profiles;
-                    app.confirm_sync = false;
-                }
+            if done {
+                app.load_log();
             }
         }
+
+        (KeyCode::Esc, _) if app.view != View::Progress => match app.view {
+            View::Home | View::Profiles => {}
+            _ => {
+                app.view = View::Profiles;
+                app.confirm_sync = false;
+            }
+        },
 
         // ── Home ─────────────────────────────────────────────────────────
         (KeyCode::Char('j') | KeyCode::Down, _) if app.view == View::Home => {
@@ -160,9 +166,7 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
         (KeyCode::Char('k') | KeyCode::Up, _) if app.view == View::Profiles => {
             app.move_up();
         }
-        (KeyCode::Enter, _)
-            if app.view == View::Profiles && !app.profiles.is_empty() =>
-        {
+        (KeyCode::Enter, _) if app.view == View::Profiles && !app.profiles.is_empty() => {
             app.enter_diff();
         }
         (KeyCode::Char('r'), _) if app.view == View::Profiles => {
@@ -255,8 +259,14 @@ fn launch_sync(app: &mut App) {
     use crate::config::Mode;
     use crate::transfer::executor::{Options, SyncMode};
 
-    let DiffState::Ready { result, source, destination, profile_name, mode, .. } =
-        &app.diff_state
+    let DiffState::Ready {
+        result,
+        source,
+        destination,
+        profile_name,
+        mode,
+        ..
+    } = &app.diff_state
     else {
         return;
     };
@@ -268,7 +278,9 @@ fn launch_sync(app: &mut App) {
     let profile_name = profile_name.clone();
     let mode = *mode;
 
-    let Some((_, profile)) = app.profiles.get(app.profile_idx) else { return };
+    let Some((_, profile)) = app.profiles.get(app.profile_idx) else {
+        return;
+    };
     let verify = profile.transfer.verify;
     let total_bytes = plan.transfer_bytes();
 
@@ -279,7 +291,10 @@ fn launch_sync(app: &mut App) {
 
     let manifest_dir = match manifest_dir() {
         Ok(d) => d,
-        Err(e) => { app.set_flash(format!("manifest dir error: {e}")); return; }
+        Err(e) => {
+            app.set_flash(format!("manifest dir error: {e}"));
+            return;
+        }
     };
 
     let run_id = crate::logging::current_run_id();
@@ -313,7 +328,9 @@ fn handle_wizard_key(app: &mut App, key: crossterm::event::KeyEvent) {
     let Some(ref wiz) = app.wizard else { return };
 
     if key.code == K::Char('c')
-        && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
+        && key
+            .modifiers
+            .contains(crossterm::event::KeyModifiers::CONTROL)
     {
         app.should_quit = true;
         return;
@@ -321,7 +338,8 @@ fn handle_wizard_key(app: &mut App, key: crossterm::event::KeyEvent) {
 
     if key.code == K::Esc {
         // In destination browse mode, Esc goes back to the DAP list.
-        if wiz.step == WizardStep::Destination && wiz.dest_choice == app.scan.identified.len()
+        if wiz.step == WizardStep::Destination
+            && wiz.dest_choice == app.scan.identified.len()
             && wiz.dest_browser.is_some()
         {
             // dest_browser is always Some; Esc here just resets dest_choice
@@ -330,7 +348,10 @@ fn handle_wizard_key(app: &mut App, key: crossterm::event::KeyEvent) {
         }
         match wiz.step.prev() {
             Some(prev) => app.wizard.as_mut().unwrap().step = prev,
-            None => { app.view = View::Profiles; app.wizard = None; }
+            None => {
+                app.view = View::Profiles;
+                app.wizard = None;
+            }
         }
         return;
     }
@@ -348,16 +369,19 @@ fn handle_wizard_key(app: &mut App, key: crossterm::event::KeyEvent) {
                         .map(|dir| dir.join(format!("{filename}.toml")).exists())
                         .unwrap_or(false);
                     if duplicate {
-                        app.wizard.as_mut().unwrap().error = Some(
-                            format!("'{filename}.toml' already exists — choose a different name"),
-                        );
+                        app.wizard.as_mut().unwrap().error = Some(format!(
+                            "'{filename}.toml' already exists — choose a different name"
+                        ));
                     } else {
                         app.wizard.as_mut().unwrap().error = None;
                         app.wizard.as_mut().unwrap().step = WizardStep::Source;
                     }
                 }
             } else {
-                app.wizard.as_mut().unwrap().name
+                app.wizard
+                    .as_mut()
+                    .unwrap()
+                    .name
                     .handle_event(&crossterm::event::Event::Key(key));
             }
         }
@@ -366,11 +390,10 @@ fn handle_wizard_key(app: &mut App, key: crossterm::event::KeyEvent) {
         WizardStep::Source => {
             let wiz = app.wizard.as_mut().unwrap();
             match key.code {
-                K::Char('j') | K::Down       => wiz.source_browser.move_down(),
-                K::Char('k') | K::Up         => wiz.source_browser.move_up(),
-                K::Char('h') | K::Left       => wiz.source_browser.go_up(),
-                K::Enter | K::Char('l') | K::Right
-                    if wiz.source_browser.enter_selected() => {
+                K::Char('j') | K::Down => wiz.source_browser.move_down(),
+                K::Char('k') | K::Up => wiz.source_browser.move_up(),
+                K::Char('h') | K::Left => wiz.source_browser.go_up(),
+                K::Enter | K::Char('l') | K::Right if wiz.source_browser.enter_selected() => {
                     wiz.error = None;
                     wiz.step = WizardStep::Destination;
                 }
@@ -388,11 +411,10 @@ fn handle_wizard_key(app: &mut App, key: crossterm::event::KeyEvent) {
                 let wiz = app.wizard.as_mut().unwrap();
                 let browser = wiz.dest_browser.as_mut().unwrap();
                 match key.code {
-                    K::Char('j') | K::Down       => browser.move_down(),
-                    K::Char('k') | K::Up         => browser.move_up(),
-                    K::Char('h') | K::Left       => browser.go_up(),
-                    K::Enter | K::Char('l') | K::Right
-                        if browser.enter_selected() => {
+                    K::Char('j') | K::Down => browser.move_down(),
+                    K::Char('k') | K::Up => browser.move_up(),
+                    K::Char('h') | K::Left => browser.go_up(),
+                    K::Enter | K::Char('l') | K::Right if browser.enter_selected() => {
                         wiz.error = None;
                         wiz.step = WizardStep::Mode;
                     }
@@ -403,8 +425,10 @@ fn handle_wizard_key(app: &mut App, key: crossterm::event::KeyEvent) {
                 let total = manual_idx + 1;
                 let wiz = app.wizard.as_mut().unwrap();
                 match key.code {
-                    K::Char('j') | K::Down => wiz.dest_choice = (wiz.dest_choice + 1).min(total - 1),
-                    K::Char('k') | K::Up   => wiz.dest_choice = wiz.dest_choice.saturating_sub(1),
+                    K::Char('j') | K::Down => {
+                        wiz.dest_choice = (wiz.dest_choice + 1).min(total - 1)
+                    }
+                    K::Char('k') | K::Up => wiz.dest_choice = wiz.dest_choice.saturating_sub(1),
                     K::Enter if wiz.dest_choice < manual_idx => {
                         wiz.error = None;
                         wiz.step = WizardStep::Mode;
@@ -420,7 +444,7 @@ fn handle_wizard_key(app: &mut App, key: crossterm::event::KeyEvent) {
             let wiz = app.wizard.as_mut().unwrap();
             match key.code {
                 K::Char('j') | K::Down => wiz.mode_choice = (wiz.mode_choice + 1).min(1),
-                K::Char('k') | K::Up   => wiz.mode_choice = wiz.mode_choice.saturating_sub(1),
+                K::Char('k') | K::Up => wiz.mode_choice = wiz.mode_choice.saturating_sub(1),
                 K::Enter => wiz.step = WizardStep::Confirm,
                 _ => {}
             }
@@ -428,29 +452,34 @@ fn handle_wizard_key(app: &mut App, key: crossterm::event::KeyEvent) {
 
         // ── Confirm ───────────────────────────────────────────────────────
         WizardStep::Confirm => match key.code {
-            K::Enter => {
-                match write_new_profile(app) {
-                    Ok(name) => {
-                        app.view = View::Profiles;
-                        if let Ok(discovered) = crate::config::discover() {
-                            app.profiles.clear();
-                            for (fname, path) in discovered {
-                                match crate::config::load(&path) {
-                                    Ok(p) => app.profiles.push((fname, p)),
-                                    Err(e) => tracing::warn!(err = %e, "skipping profile"),
-                                }
-                            }
-                            if let Some(idx) = app.profiles.iter().position(|(_, p)| p.profile.name == name) {
-                                app.profile_idx = idx;
+            K::Enter => match write_new_profile(app) {
+                Ok(name) => {
+                    app.view = View::Profiles;
+                    if let Ok(discovered) = crate::config::discover() {
+                        app.profiles.clear();
+                        for (fname, path) in discovered {
+                            match crate::config::load(&path) {
+                                Ok(p) => app.profiles.push((fname, p)),
+                                Err(e) => tracing::warn!(err = %e, "skipping profile"),
                             }
                         }
-                        app.wizard = None;
-                        app.set_flash(format!("profile '{name}' created"));
+                        if let Some(idx) = app
+                            .profiles
+                            .iter()
+                            .position(|(_, p)| p.profile.name == name)
+                        {
+                            app.profile_idx = idx;
+                        }
                     }
-                    Err(e) => app.wizard.as_mut().unwrap().error = Some(e.to_string()),
+                    app.wizard = None;
+                    app.set_flash(format!("profile '{name}' created"));
                 }
+                Err(e) => app.wizard.as_mut().unwrap().error = Some(e.to_string()),
+            },
+            K::Char('q') => {
+                app.view = View::Profiles;
+                app.wizard = None;
             }
-            K::Char('q') => { app.view = View::Profiles; app.wizard = None; }
             _ => {}
         },
     }
@@ -464,22 +493,32 @@ fn write_new_profile(app: &App) -> anyhow::Result<String> {
     let dap = wiz.selected_dap().to_owned();
     let mode = wiz.selected_mode();
 
-    if name.is_empty()        { anyhow::bail!("name is empty"); }
-    if source.is_empty()      { anyhow::bail!("source is empty"); }
-    if destination.is_empty() { anyhow::bail!("destination is empty"); }
+    if name.is_empty() {
+        anyhow::bail!("name is empty");
+    }
+    if source.is_empty() {
+        anyhow::bail!("source is empty");
+    }
+    if destination.is_empty() {
+        anyhow::bail!("destination is empty");
+    }
 
     let filename = views::new_profile::sanitize_name(&name);
     let dir = crate::config::profiles_dir()?;
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(format!("{filename}.toml"));
-    if path.exists() { anyhow::bail!("'{filename}.toml' already exists"); }
+    if path.exists() {
+        anyhow::bail!("'{filename}.toml' already exists");
+    }
 
     // Escape backslashes for TOML basic strings (Windows paths).
-    let source_toml      = source.replace('\\', "\\\\");
+    let source_toml = source.replace('\\', "\\\\");
     let destination_toml = destination.replace('\\', "\\\\");
 
-    std::fs::write(&path, format!(
-        "schema_version = 1\n\
+    std::fs::write(
+        &path,
+        format!(
+            "schema_version = 1\n\
          \n\
          [profile]\n\
          name        = \"{name}\"\n\
@@ -496,7 +535,8 @@ fn write_new_profile(app: &App) -> anyhow::Result<String> {
          verify          = \"size_mtime\"\n\
          dry_run_default = true\n\
          parallelism     = 4\n"
-    ))?;
+        ),
+    )?;
     Ok(name)
 }
 
@@ -524,22 +564,25 @@ fn compute_diff(app: &mut App) {
         Ok(d) => d,
         Err(e) => {
             app.diff_state = DiffState::Error(format!(
-                "DAP profile '{}': {e}", profile.profile.dap_profile
+                "DAP profile '{}': {e}",
+                profile.profile.dap_profile
             ));
             return;
         }
     };
-    let resolved = crate::config::ResolvedProfile { sync: profile.clone(), dap };
+    let resolved = crate::config::ResolvedProfile {
+        sync: profile.clone(),
+        dap,
+    };
 
     let source = camino::Utf8PathBuf::from(&profile.profile.source);
-    let destination =
-        match crate::scan::resolve_destination(&profile.profile.destination) {
-            Ok(d) => d,
-            Err(e) => {
-                app.diff_state = DiffState::Error(format!("destination: {e}"));
-                return;
-            }
-        };
+    let destination = match crate::scan::resolve_destination(&profile.profile.destination) {
+        Ok(d) => d,
+        Err(e) => {
+            app.diff_state = DiffState::Error(format!("destination: {e}"));
+            return;
+        }
+    };
 
     let dap_id = resolved.dap.dap.id.clone();
     let mode = profile.profile.mode;
@@ -570,18 +613,27 @@ fn enqueue_diff_entry(app: &mut App) {
     let (source, entry_path, transcode_from) = match &app.diff_state {
         DiffState::Ready { result, source, .. } => {
             let filter = app.diff_entry_filter;
-            let filtered: Vec<_> = result.plan.entries.iter()
+            let filtered: Vec<_> = result
+                .plan
+                .entries
+                .iter()
                 .filter(|e| filter.matches(e.kind))
                 .collect();
 
-            let Some(entry) = filtered.get(app.diff_entry_idx) else { return };
+            let Some(entry) = filtered.get(app.diff_entry_idx) else {
+                return;
+            };
 
             if entry.kind == EntryKind::Orphan {
                 app.set_flash("orphans exist only on destination — use L/D in player to toggle");
                 return;
             }
 
-            (source.clone(), entry.path.clone(), entry.transcode_from.clone())
+            (
+                source.clone(),
+                entry.path.clone(),
+                entry.transcode_from.clone(),
+            )
         }
         _ => return,
     };
@@ -615,7 +667,9 @@ fn handle_player_key(app: &mut App, key: crossterm::event::KeyEvent) {
     use crossterm::event::KeyCode as K;
 
     if key.code == K::Char('c')
-        && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
+        && key
+            .modifiers
+            .contains(crossterm::event::KeyModifiers::CONTROL)
     {
         app.should_quit = true;
         return;

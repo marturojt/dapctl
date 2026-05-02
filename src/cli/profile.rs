@@ -66,7 +66,10 @@ fn cmd_show(id: &str) -> anyhow::Result<()> {
     println!("FILESYSTEM");
     println!("  Preferred       {}", dap.filesystem.preferred);
     println!("  Supported       {}", dap.filesystem.supported.join(", "));
-    println!("  Max filename    {} bytes", dap.filesystem.max_filename_bytes);
+    println!(
+        "  Max filename    {} bytes",
+        dap.filesystem.max_filename_bytes
+    );
     println!("  Case sensitive  {}", dap.filesystem.case_sensitive);
     println!();
     println!("CODECS");
@@ -104,10 +107,7 @@ fn cmd_check(path: &str) -> anyhow::Result<()> {
     println!("    DAP profile → {} ({})", dap.dap.name, dap.dap.id);
 
     // Build and validate globsets
-    let resolved = crate::config::ResolvedProfile {
-        sync: profile,
-        dap,
-    };
+    let resolved = crate::config::ResolvedProfile { sync: profile, dap };
     let exc = resolved.build_exclude_set()?;
     let inc = resolved.build_include_set()?;
     println!(

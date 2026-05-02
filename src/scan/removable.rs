@@ -29,7 +29,11 @@ pub fn enumerate() -> anyhow::Result<Vec<Mount>> {
 
         let filesystem = {
             let s = disk.file_system().to_string_lossy().to_uppercase();
-            if s.is_empty() { None } else { Some(s) }
+            if s.is_empty() {
+                None
+            } else {
+                Some(s)
+            }
         };
 
         mounts.push(Mount {
@@ -81,10 +85,7 @@ fn windows_volume_label(mount: &Utf8PathBuf) -> Option<String> {
         }
     };
 
-    let root_wide: Vec<u16> = OsStr::new(&root_str)
-        .encode_wide()
-        .chain(Some(0))
-        .collect();
+    let root_wide: Vec<u16> = OsStr::new(&root_str).encode_wide().chain(Some(0)).collect();
 
     let mut label_buf = vec![0u16; 256];
 
@@ -105,7 +106,14 @@ fn windows_volume_label(mount: &Utf8PathBuf) -> Option<String> {
         return None;
     }
 
-    let end = label_buf.iter().position(|&c| c == 0).unwrap_or(label_buf.len());
+    let end = label_buf
+        .iter()
+        .position(|&c| c == 0)
+        .unwrap_or(label_buf.len());
     let label = String::from_utf16(&label_buf[..end]).ok()?;
-    if label.trim().is_empty() { None } else { Some(label.trim().to_owned()) }
+    if label.trim().is_empty() {
+        None
+    } else {
+        Some(label.trim().to_owned())
+    }
 }

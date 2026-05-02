@@ -20,13 +20,18 @@ pub fn render(f: &mut Frame, app: &App) {
     let step_label = if wiz.step == WizardStep::Confirm {
         "confirm".to_owned()
     } else {
-        format!("step {}/{TOTAL_STEPS}: {}", wiz.step.number(), wiz.step.label())
+        format!(
+            "step {}/{TOTAL_STEPS}: {}",
+            wiz.step.number(),
+            wiz.step.label()
+        )
     };
 
     let outer = Block::bordered()
-        .title(Line::from(" dapctl — new profile ").style(
-            Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
-        ))
+        .title(
+            Line::from(" dapctl — new profile ")
+                .style(Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)),
+        )
         .title(
             Line::from(format!(" {step_label} "))
                 .style(Style::default().fg(theme.muted))
@@ -60,7 +65,10 @@ pub fn render(f: &mut Frame, app: &App) {
     match wiz.step {
         WizardStep::Name => render_name(f, app, content_area, footer_area),
         WizardStep::Source => render_browser_step(
-            f, app, content_area, footer_area,
+            f,
+            app,
+            content_area,
+            footer_area,
             "Source — your music library",
             &wiz.source_browser,
         ),
@@ -164,11 +172,18 @@ fn render_browser_step(
     let (path_str, path_style) = if browser.at_drives_root {
         ("  [ select a drive ]", Style::default().fg(theme.muted))
     } else {
-        (browser.current.as_str(), Style::default().fg(theme.warn).add_modifier(Modifier::BOLD))
+        (
+            browser.current.as_str(),
+            Style::default().fg(theme.warn).add_modifier(Modifier::BOLD),
+        )
     };
     f.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            if browser.at_drives_root { path_str.to_owned() } else { format!("  {path_str}") },
+            if browser.at_drives_root {
+                path_str.to_owned()
+            } else {
+                format!("  {path_str}")
+            },
             path_style,
         ))),
         path_area,
@@ -186,8 +201,14 @@ fn render_destination(f: &mut Frame, app: &App, content: Rect, footer: Rect) {
     // If "Browse…" is selected, show the file browser.
     if wiz.dest_choice == manual_idx {
         if let Some(ref browser) = wiz.dest_browser {
-            render_browser_step(f, app, content, footer,
-                "Destination — browse to the folder on your DAP", browser);
+            render_browser_step(
+                f,
+                app,
+                content,
+                footer,
+                "Destination — browse to the folder on your DAP",
+                browser,
+            );
             return;
         }
     }
@@ -211,21 +232,28 @@ fn render_destination(f: &mut Frame, app: &App, content: Rect, footer: Rect) {
         heading_area,
     );
 
-    let mut items: Vec<ListItem> = app.scan.identified.iter().map(|id| {
-        ListItem::new(Line::from(vec![
-            Span::styled(
-                format!("  {:<22}", id.dap_id),
-                Style::default().fg(theme.fg),
-            ),
-            Span::styled(
-                format!("auto:{:<16}  {}", id.dap_id, id.mount.mount_point),
-                Style::default().fg(theme.muted),
-            ),
-        ]))
-    }).collect();
+    let mut items: Vec<ListItem> = app
+        .scan
+        .identified
+        .iter()
+        .map(|id| {
+            ListItem::new(Line::from(vec![
+                Span::styled(
+                    format!("  {:<22}", id.dap_id),
+                    Style::default().fg(theme.fg),
+                ),
+                Span::styled(
+                    format!("auto:{:<16}  {}", id.dap_id, id.mount.mount_point),
+                    Style::default().fg(theme.muted),
+                ),
+            ]))
+        })
+        .collect();
     items.push(ListItem::new(Line::from(Span::styled(
         "  Browse filesystem…",
-        Style::default().fg(theme.muted).add_modifier(Modifier::ITALIC),
+        Style::default()
+            .fg(theme.muted)
+            .add_modifier(Modifier::ITALIC),
     ))));
 
     let list = List::new(items)
@@ -266,19 +294,28 @@ fn render_mode(f: &mut Frame, app: &App, content: Rect, footer: Rect) {
     );
 
     let modes = [
-        ("additive", "copy new + modified, never delete from destination"),
-        ("mirror",   "copy new + modified, DELETE orphans from destination"),
+        (
+            "additive",
+            "copy new + modified, never delete from destination",
+        ),
+        (
+            "mirror",
+            "copy new + modified, DELETE orphans from destination",
+        ),
     ];
 
-    let items: Vec<ListItem> = modes.iter().map(|(name, desc)| {
-        ListItem::new(Line::from(vec![
-            Span::styled(
-                format!("  {name:<12}"),
-                Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(format!("  {desc}"), Style::default().fg(theme.muted)),
-        ]))
-    }).collect();
+    let items: Vec<ListItem> = modes
+        .iter()
+        .map(|(name, desc)| {
+            ListItem::new(Line::from(vec![
+                Span::styled(
+                    format!("  {name:<12}"),
+                    Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(format!("  {desc}"), Style::default().fg(theme.muted)),
+            ]))
+        })
+        .collect();
 
     let list = List::new(items)
         .style(Style::default().bg(theme.bg))
@@ -336,9 +373,12 @@ fn render_confirm(f: &mut Frame, app: &App, content: Rect, footer: Rect) {
 
     f.render_widget(
         Paragraph::new(Line::from(vec![
-            kb("enter"), Span::raw(" confirm  "),
-            kb("esc"),   Span::raw(" back  "),
-            kb("q"),     Span::raw(" cancel"),
+            kb("enter"),
+            Span::raw(" confirm  "),
+            kb("esc"),
+            Span::raw(" back  "),
+            kb("q"),
+            Span::raw(" cancel"),
         ]))
         .style(Style::default().fg(theme.muted)),
         footer,
@@ -347,23 +387,25 @@ fn render_confirm(f: &mut Frame, app: &App, content: Rect, footer: Rect) {
 
 // ── File browser list ─────────────────────────────────────────────────────────
 
-fn render_browser_list(
-    f: &mut Frame,
-    theme: &Theme,
-    browser: &FileBrowserState,
-    area: Rect,
-) {
+fn render_browser_list(f: &mut Frame, theme: &Theme, browser: &FileBrowserState, area: Rect) {
     let visible = area.height as usize;
     let scroll = browser.cursor.saturating_sub(visible.saturating_sub(1));
 
     let items: Vec<ListItem> = if browser.at_drives_root {
         // Drives list — no "select" header, just the drive letters.
-        browser.entries.iter().map(|drive| {
-            ListItem::new(Line::from(vec![
-                Span::raw("  "),
-                Span::styled(drive.as_str(), Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)),
-            ]))
-        }).collect()
+        browser
+            .entries
+            .iter()
+            .map(|drive| {
+                ListItem::new(Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(
+                        drive.as_str(),
+                        Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
+                    ),
+                ]))
+            })
+            .collect()
     } else {
         // Normal directory listing.
         let select = ListItem::new(Line::from(Span::styled(
@@ -413,9 +455,12 @@ fn render_browser_list(
 fn render_text_footer(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(
         Paragraph::new(Line::from(vec![
-            kb("enter"), Span::raw(" next  "),
-            kb("esc"),   Span::raw(" back  "),
-            kb("ctrl+c"), Span::raw(" quit"),
+            kb("enter"),
+            Span::raw(" next  "),
+            kb("esc"),
+            Span::raw(" back  "),
+            kb("ctrl+c"),
+            Span::raw(" quit"),
         ]))
         .style(Style::default().fg(app.theme.muted)),
         area,
@@ -424,8 +469,10 @@ fn render_text_footer(f: &mut Frame, app: &App, area: Rect) {
 
 fn render_browser_footer(f: &mut Frame, app: &App, area: Rect, can_go_up: bool) {
     let mut spans = vec![
-        kb("j/k"),       Span::raw(" navigate  "),
-        kb("enter/l/→"), Span::raw(" open/select  "),
+        kb("j/k"),
+        Span::raw(" navigate  "),
+        kb("enter/l/→"),
+        Span::raw(" open/select  "),
     ];
     if can_go_up {
         spans.push(kb("h/←"));
@@ -435,8 +482,7 @@ fn render_browser_footer(f: &mut Frame, app: &App, area: Rect, can_go_up: bool) 
     spans.push(Span::raw(" back"));
 
     f.render_widget(
-        Paragraph::new(Line::from(spans))
-            .style(Style::default().fg(app.theme.muted)),
+        Paragraph::new(Line::from(spans)).style(Style::default().fg(app.theme.muted)),
         area,
     );
 }
@@ -444,9 +490,12 @@ fn render_browser_footer(f: &mut Frame, app: &App, area: Rect, can_go_up: bool) 
 fn render_list_footer(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(
         Paragraph::new(Line::from(vec![
-            kb("j/k"),   Span::raw(" move  "),
-            kb("enter"), Span::raw(" select  "),
-            kb("esc"),   Span::raw(" back"),
+            kb("j/k"),
+            Span::raw(" move  "),
+            kb("enter"),
+            Span::raw(" select  "),
+            kb("esc"),
+            Span::raw(" back"),
         ]))
         .style(Style::default().fg(app.theme.muted)),
         area,
@@ -458,7 +507,10 @@ fn render_list_footer(f: &mut Frame, app: &App, area: Rect) {
 fn summary_row<'a>(label: &'a str, value: &'a str, theme: &'a Theme) -> Line<'a> {
     Line::from(vec![
         Span::styled(label, Style::default().fg(theme.muted)),
-        Span::styled(value, Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            value,
+            Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
+        ),
     ])
 }
 
@@ -471,7 +523,13 @@ fn kb(key: &str) -> Span<'static> {
 
 pub fn sanitize_name(s: &str) -> String {
     s.chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect::<String>()
         .trim_matches('-')
         .to_lowercase()

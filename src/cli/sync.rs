@@ -64,15 +64,10 @@ pub fn run(args: Args, yes: bool) -> anyhow::Result<()> {
     let eta = plan.eta_secs(ESTIMATED_SPEED_BPS);
 
     // ── Summary ───────────────────────────────────────────────────────────
-    println!(
-        "SYNC  {}  →  {}",
-        resolved.sync.profile.source, destination
-    );
+    println!("SYNC  {}  →  {}", resolved.sync.profile.source, destination);
     println!(
         "      profile: {}  mode: {:?}  dap: {}",
-        resolved.sync.profile.name,
-        resolved.sync.profile.mode,
-        resolved.dap.dap.id,
+        resolved.sync.profile.name, resolved.sync.profile.mode, resolved.dap.dap.id,
     );
     println!("{}", "─".repeat(62));
     println!(
@@ -109,8 +104,7 @@ pub fn run(args: Args, yes: bool) -> anyhow::Result<()> {
     }
 
     // ── Confirm mirror deletions ───────────────────────────────────────────
-    let has_deletions =
-        matches!(mode, SyncMode::Mirror) && plan.count(EntryKind::Orphan) > 0;
+    let has_deletions = matches!(mode, SyncMode::Mirror) && plan.count(EntryKind::Orphan) > 0;
 
     if dry_run {
         println!();
@@ -181,9 +175,7 @@ pub fn run(args: Args, yes: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn build_transcode_opts(
-    resolved: &crate::config::ResolvedProfile,
-) -> Option<TranscodeOpts> {
+fn build_transcode_opts(resolved: &crate::config::ResolvedProfile) -> Option<TranscodeOpts> {
     let tc = &resolved.sync.transcode;
     if !tc.enabled || tc.rules.is_empty() {
         return None;

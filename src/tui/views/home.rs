@@ -20,8 +20,8 @@ const BANNER: &[&str] = &[
 
 const MENU: &[(&str, &str)] = &[
     ("sync & profiles", "manage and run sync"),
-    ("player",          "browse & play your library"),
-    ("log",             "last sync run history"),
+    ("player", "browse & play your library"),
+    ("log", "last sync run history"),
 ];
 
 pub fn render(f: &mut Frame, app: &mut App) {
@@ -34,9 +34,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             Span::raw(" "),
             Span::styled(
                 "▸ dapctl",
-                Style::default()
-                    .fg(theme.fg)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
             ),
             Span::raw(" "),
         ]))
@@ -53,38 +51,24 @@ pub fn render(f: &mut Frame, app: &mut App) {
     let inner = outer.inner(area);
     f.render_widget(outer, area);
 
-    let [
-        _b1,
-        banner_area,
-        _b2,
-        tagline_area,
-        _b3,
-        sep1_area,
-        _b4,
-        menu_area,
-        _b5,
-        sep2_area,
-        _b6,
-        daps_area,
-        _spacer,
-        hints_area,
-    ] = Layout::vertical([
-        Constraint::Length(1),                    // blank
-        Constraint::Length(BANNER.len() as u16),  // banner (3 rows)
-        Constraint::Length(1),                    // blank
-        Constraint::Length(1),                    // tagline
-        Constraint::Length(1),                    // blank + separator
-        Constraint::Length(1),                    // separator
-        Constraint::Length(1),                    // blank
-        Constraint::Length(MENU.len() as u16),    // menu
-        Constraint::Length(1),                    // blank
-        Constraint::Length(1),                    // separator
-        Constraint::Length(1),                    // blank
-        Constraint::Length(1),                    // DAP status
-        Constraint::Fill(1),
-        Constraint::Length(1),                    // hints
-    ])
-    .areas(inner);
+    let [_b1, banner_area, _b2, tagline_area, _b3, sep1_area, _b4, menu_area, _b5, sep2_area, _b6, daps_area, _spacer, hints_area] =
+        Layout::vertical([
+            Constraint::Length(1),                   // blank
+            Constraint::Length(BANNER.len() as u16), // banner (3 rows)
+            Constraint::Length(1),                   // blank
+            Constraint::Length(1),                   // tagline
+            Constraint::Length(1),                   // blank + separator
+            Constraint::Length(1),                   // separator
+            Constraint::Length(1),                   // blank
+            Constraint::Length(MENU.len() as u16),   // menu
+            Constraint::Length(1),                   // blank
+            Constraint::Length(1),                   // separator
+            Constraint::Length(1),                   // blank
+            Constraint::Length(1),                   // DAP status
+            Constraint::Fill(1),
+            Constraint::Length(1), // hints
+        ])
+        .areas(inner);
 
     // ── Banner ────────────────────────────────────────────────────────────────
     draw_banner(f, banner_area, theme);
@@ -158,9 +142,7 @@ fn draw_banner(f: &mut Frame, area: Rect, theme: &Theme) {
         .map(|row| {
             Line::from(Span::styled(
                 format!("{prefix}{row}"),
-                Style::default()
-                    .fg(theme.fg)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
             ))
         })
         .collect();
@@ -187,9 +169,9 @@ fn draw_menu(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
                 static_desc.to_string()
             };
 
-            let marker   = if sel { "▶  " } else { "   " };
-            let label_s  = format!("{:<20}", label);
-            let desc_s   = if desc_w > 0 {
+            let marker = if sel { "▶  " } else { "   " };
+            let label_s = format!("{:<20}", label);
+            let desc_s = if desc_w > 0 {
                 format!("{:>desc_w$}", trunc(&desc, desc_w))
             } else {
                 String::new()
@@ -246,9 +228,7 @@ fn draw_daps(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
 fn kb<'a>(key: &'a str, theme: &Theme) -> Span<'a> {
     Span::styled(
         key,
-        Style::default()
-            .fg(theme.fg)
-            .add_modifier(Modifier::BOLD),
+        Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
     )
 }
 

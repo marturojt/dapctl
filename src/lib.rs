@@ -13,6 +13,6 @@ pub mod export;
 pub mod logging;
 pub mod player;
 pub mod scan;
-pub mod transfer;
 pub mod transcode;
+pub mod transfer;
 pub mod tui;

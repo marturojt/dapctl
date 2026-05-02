@@ -78,11 +78,9 @@ pub fn render(f: &mut Frame, app: &App) {
         .max(3)
         .min(content_area.height.saturating_sub(4));
 
-    let [profiles_area, daps_area] = Layout::vertical([
-        Constraint::Length(profiles_height),
-        Constraint::Fill(1),
-    ])
-    .areas(content_area);
+    let [profiles_area, daps_area] =
+        Layout::vertical([Constraint::Length(profiles_height), Constraint::Fill(1)])
+            .areas(content_area);
 
     render_profiles(f, app, profiles_area);
     render_daps(f, app, daps_area);
@@ -195,10 +193,7 @@ fn render_daps(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
                     format!("  free {} / {}", free, total),
                     Style::default().fg(theme.muted),
                 ),
-                Span::styled(
-                    format!("  ({})", label),
-                    Style::default().fg(theme.muted),
-                ),
+                Span::styled(format!("  ({})", label), Style::default().fg(theme.muted)),
             ]));
         }
         for m in &app.scan.unidentified {

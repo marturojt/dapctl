@@ -67,7 +67,11 @@ impl Manifest {
             writeln!(file, "{}", serde_json::to_string(e)?)?;
         }
 
-        Ok(Self { run_id: run_id.to_owned(), path, file })
+        Ok(Self {
+            run_id: run_id.to_owned(),
+            path,
+            file,
+        })
     }
 
     /// Append a state update for a single entry.
@@ -78,8 +82,8 @@ impl Manifest {
 
     /// Read an existing manifest file and return the last known state per path.
     pub fn load_states(path: &Utf8Path) -> anyhow::Result<HashMap<Utf8PathBuf, State>> {
-        let file = std::fs::File::open(path)
-            .with_context(|| format!("cannot open manifest {path}"))?;
+        let file =
+            std::fs::File::open(path).with_context(|| format!("cannot open manifest {path}"))?;
         let mut states = HashMap::new();
         for line in BufReader::new(file).lines() {
             let line = line?;

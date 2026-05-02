@@ -92,7 +92,11 @@ fn classify(src: &WalkEntry, dst: &WalkEntry, verify: Verify) -> EntryKind {
     match verify {
         Verify::None => EntryKind::Same,
         Verify::SizeMtime => {
-            if same_size_mtime(src, dst) { EntryKind::Same } else { EntryKind::Modified }
+            if same_size_mtime(src, dst) {
+                EntryKind::Same
+            } else {
+                EntryKind::Modified
+            }
         }
         Verify::Checksum => {
             if src.size != dst.size {
@@ -100,11 +104,19 @@ fn classify(src: &WalkEntry, dst: &WalkEntry, verify: Verify) -> EntryKind {
             }
             match (src.hash, dst.hash) {
                 (Some(sh), Some(dh)) => {
-                    if sh == dh { EntryKind::Same } else { EntryKind::Modified }
+                    if sh == dh {
+                        EntryKind::Same
+                    } else {
+                        EntryKind::Modified
+                    }
                 }
                 // Hashes absent (compute_hashes was false): fall back to mtime.
                 _ => {
-                    if same_mtime(src, dst) { EntryKind::Same } else { EntryKind::Modified }
+                    if same_mtime(src, dst) {
+                        EntryKind::Same
+                    } else {
+                        EntryKind::Modified
+                    }
                 }
             }
         }
@@ -130,12 +142,24 @@ mod tests {
     use camino::Utf8PathBuf;
 
     fn entry(path: &str, size: u64, mtime_ns: i128) -> WalkEntry {
-        WalkEntry { rel: Utf8PathBuf::from(path), size, mtime_ns, hash: None, src_ext: None }
+        WalkEntry {
+            rel: Utf8PathBuf::from(path),
+            size,
+            mtime_ns,
+            hash: None,
+            src_ext: None,
+        }
     }
 
     fn entry_hashed(path: &str, size: u64, data: &[u8]) -> WalkEntry {
         let hash = Some(blake3::hash(data));
-        WalkEntry { rel: Utf8PathBuf::from(path), size, mtime_ns: 0, hash, src_ext: None }
+        WalkEntry {
+            rel: Utf8PathBuf::from(path),
+            size,
+            mtime_ns: 0,
+            hash,
+            src_ext: None,
+        }
     }
 
     fn transcoded_entry(path: &str, size: u64, mtime_ns: i128, src_ext: &str) -> WalkEntry {
@@ -219,20 +243,20 @@ mod tests {
     #[test]
     fn mixed_plan_counts_correctly() {
         let src = vec![
-            entry("album/01.flac", 100, T),      // Same
-            entry("album/02.flac", 200, T),      // Modified (size change)
-            entry("album/03.flac", 300, T),      // New
+            entry("album/01.flac", 100, T), // Same
+            entry("album/02.flac", 200, T), // Modified (size change)
+            entry("album/03.flac", 300, T), // New
         ];
         let dst = vec![
-            entry("album/01.flac", 100, T),      // Same
-            entry("album/02.flac", 150, T),      // → Modified
-            entry("album/04.flac", 400, T),      // Orphan
+            entry("album/01.flac", 100, T), // Same
+            entry("album/02.flac", 150, T), // → Modified
+            entry("album/04.flac", 400, T), // Orphan
         ];
         let plan = compare(&src, &dst, Verify::SizeMtime);
-        assert_eq!(plan.count(EntryKind::New),      1, "new");
+        assert_eq!(plan.count(EntryKind::New), 1, "new");
         assert_eq!(plan.count(EntryKind::Modified), 1, "modified");
-        assert_eq!(plan.count(EntryKind::Orphan),   1, "orphan");
-        assert_eq!(plan.count(EntryKind::Same),     1, "same");
+        assert_eq!(plan.count(EntryKind::Orphan), 1, "orphan");
+        assert_eq!(plan.count(EntryKind::Same), 1, "same");
     }
 
     #[test]
@@ -248,7 +272,12 @@ mod tests {
     #[test]
     fn transcoded_src_newer_is_modified() {
         // src (DSF) has been updated after dst (FLAC) was produced → re-transcode.
-        let src = vec![transcoded_entry("song.flac", 1000, T + 5_000_000_000, "dsf")];
+        let src = vec![transcoded_entry(
+            "song.flac",
+            1000,
+            T + 5_000_000_000,
+            "dsf",
+        )];
         let dst = vec![entry("song.flac", 5000, T)];
         let plan = compare(&src, &dst, Verify::SizeMtime);
         assert_eq!(plan.count(EntryKind::Modified), 1);
@@ -293,14 +322,14 @@ mod tests {
     #[test]
     fn transfer_bytes_counts_new_and_modified_only() {
         let src = vec![
-            entry("new.flac",      500, T),
+            entry("new.flac", 500, T),
             entry("modified.flac", 300, T + 5_000_000_000),
-            entry("same.flac",     100, T),
+            entry("same.flac", 100, T),
         ];
         let dst = vec![
             entry("modified.flac", 300, T),
-            entry("orphan.flac",   200, T),
-            entry("same.flac",     100, T),
+            entry("orphan.flac", 200, T),
+            entry("same.flac", 100, T),
         ];
         let plan = compare(&src, &dst, Verify::SizeMtime);
         // transfer_bytes = new(500) + modified(300)

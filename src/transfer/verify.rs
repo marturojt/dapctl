@@ -12,10 +12,10 @@ const HASH_BUF: usize = 1024 * 1024;
 /// Verify destination matches source by size and modification time.
 /// Returns `Ok(true)` if they match within FAT32 mtime tolerance.
 pub fn size_mtime(src: &Utf8Path, dst: &Utf8Path) -> anyhow::Result<bool> {
-    let src_meta = std::fs::metadata(src.as_std_path())
-        .with_context(|| format!("cannot stat {src}"))?;
-    let dst_meta = std::fs::metadata(dst.as_std_path())
-        .with_context(|| format!("cannot stat {dst}"))?;
+    let src_meta =
+        std::fs::metadata(src.as_std_path()).with_context(|| format!("cannot stat {src}"))?;
+    let dst_meta =
+        std::fs::metadata(dst.as_std_path()).with_context(|| format!("cannot stat {dst}"))?;
 
     if src_meta.len() != dst_meta.len() {
         return Ok(false);
@@ -41,12 +41,16 @@ pub fn checksum(src: &Utf8Path, dst: &Utf8Path) -> anyhow::Result<bool> {
 /// Stream-hash a single file with blake3. Uses a fixed 1 MiB buffer.
 pub fn hash_file(path: &Utf8Path) -> anyhow::Result<blake3::Hash> {
     let mut hasher = blake3::Hasher::new();
-    let mut file = std::fs::File::open(path.as_std_path())
-        .with_context(|| format!("cannot open {path}"))?;
+    let mut file =
+        std::fs::File::open(path.as_std_path()).with_context(|| format!("cannot open {path}"))?;
     let mut buf = vec![0u8; HASH_BUF];
     loop {
-        let n = file.read(&mut buf).with_context(|| format!("read error on {path}"))?;
-        if n == 0 { break; }
+        let n = file
+            .read(&mut buf)
+            .with_context(|| format!("read error on {path}"))?;
+        if n == 0 {
+            break;
+        }
         hasher.update(&buf[..n]);
     }
     Ok(hasher.finalize())

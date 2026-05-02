@@ -43,15 +43,10 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     let mod_b = plan.total_bytes(EntryKind::Modified);
     let orp_b = plan.total_bytes(EntryKind::Orphan);
 
-    println!(
-        "DIFF  {}  →  {}",
-        resolved.sync.profile.source, destination
-    );
+    println!("DIFF  {}  →  {}", resolved.sync.profile.source, destination);
     println!(
         "      profile: {}  mode: {:?}  dap: {}",
-        resolved.sync.profile.name,
-        resolved.sync.profile.mode,
-        resolved.dap.dap.id,
+        resolved.sync.profile.name, resolved.sync.profile.mode, resolved.dap.dap.id,
     );
     println!("{}", "─".repeat(62));
 

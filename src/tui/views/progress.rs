@@ -24,9 +24,7 @@ pub fn render(f: &mut Frame, app: &App) {
 
     let title = format!(" dapctl — sync  {} ", ps.profile_name);
     let outer = Block::bordered()
-        .title(Line::from(title).style(
-            Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
-        ))
+        .title(Line::from(title).style(Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)))
         .border_style(Style::default().fg(theme.muted))
         .style(Style::default().bg(theme.bg));
 
@@ -138,7 +136,10 @@ fn render_stats(f: &mut Frame, app: &App, ps: &ProgressState, area: ratatui::lay
     if ps.finished {
         if let Some(ref s) = ps.finish_stats {
             let line = Line::from(vec![
-                Span::styled("  DONE  ", Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "  DONE  ",
+                    Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
+                ),
                 Span::raw(format!(
                     "copied {}  deleted {}  failed {}  elapsed {}",
                     s.copied,
@@ -183,7 +184,11 @@ fn render_stats(f: &mut Frame, app: &App, ps: &ProgressState, area: ratatui::lay
         Span::styled("failed ", Style::default().fg(theme.muted)),
         Span::styled(
             format!("{}", ps.failed),
-            Style::default().fg(if ps.failed > 0 { app.theme.err } else { theme.fg }),
+            Style::default().fg(if ps.failed > 0 {
+                app.theme.err
+            } else {
+                theme.fg
+            }),
         ),
     ]);
     f.render_widget(Paragraph::new(line), area);
@@ -238,10 +243,7 @@ fn render_footer(f: &mut Frame, app: &App, ps: &ProgressState, area: ratatui::la
         ])
     } else {
         Line::from(vec![
-            Span::styled(
-                "  syncing…  ",
-                Style::default().fg(theme.muted),
-            ),
+            Span::styled("  syncing…  ", Style::default().fg(theme.muted)),
             kb("q"),
             Span::raw(" available when done"),
         ])

@@ -12,7 +12,10 @@ static RUN_ID: OnceLock<String> = OnceLock::new();
 
 /// Return the run_id string set during `init()`, or a placeholder.
 pub fn current_run_id() -> String {
-    RUN_ID.get().cloned().unwrap_or_else(|| "unknown".to_owned())
+    RUN_ID
+        .get()
+        .cloned()
+        .unwrap_or_else(|| "unknown".to_owned())
 }
 
 pub struct InitOpts {
