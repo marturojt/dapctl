@@ -176,6 +176,19 @@ impl Queue {
         self.tracks.get(idx)
     }
 
+    /// Returns what `advance()` would play next, without changing the cursor.
+    pub fn peek_next(&self) -> Option<&TrackInfo> {
+        if self.tracks.is_empty() { return None; }
+        let next_cursor = match self.repeat {
+            RepeatMode::One => self.cursor,
+            RepeatMode::All => (self.cursor + 1) % self.tracks.len(),
+            RepeatMode::Off => {
+                if self.cursor + 1 < self.tracks.len() { self.cursor + 1 } else { return None; }
+            }
+        };
+        self.tracks.get(self.effective_idx(next_cursor)?)
+    }
+
     pub fn tracks(&self) -> &[TrackInfo] {
         &self.tracks
     }

@@ -1,5 +1,6 @@
 use std::io::BufReader;
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc::{Receiver, Sender}, Arc};
 use std::time::Duration;
 
 use camino::Utf8Path;
@@ -96,6 +97,39 @@ impl PlayerHandle {
     }
 }
 
+// ── Gapless helper: notifies when a Source is fully consumed ─────────────────
+
+struct TrackDoneNotifier<S> {
+    inner: S,
+    done: Arc<AtomicBool>,
+}
+
+impl<S> Iterator for TrackDoneNotifier<S>
+where
+    S: rodio::Source,
+    S::Item: rodio::Sample,
+{
+    type Item = S::Item;
+    fn next(&mut self) -> Option<S::Item> {
+        let s = self.inner.next();
+        if s.is_none() {
+            self.done.store(true, Ordering::Release);
+        }
+        s
+    }
+}
+
+impl<S> rodio::Source for TrackDoneNotifier<S>
+where
+    S: rodio::Source,
+    S::Item: rodio::Sample,
+{
+    fn current_frame_len(&self) -> Option<usize> { self.inner.current_frame_len() }
+    fn channels(&self) -> u16                    { self.inner.channels() }
+    fn sample_rate(&self) -> u32                 { self.inner.sample_rate() }
+    fn total_duration(&self) -> Option<Duration> { self.inner.total_duration() }
+}
+
 // ── Engine (runs in a dedicated thread) ───────────────────────────────────────
 
 struct Engine {
@@ -104,7 +138,10 @@ struct Engine {
     queue: Queue,
     sink: rodio::Sink,
     paused: bool,
-    track_done: bool,
+    /// Fires when the currently playing source is exhausted (gapless signal).
+    current_done: Option<Arc<AtomicBool>>,
+    /// Next track already appended to the sink for gapless transition.
+    preloaded: Option<(TrackInfo, Arc<AtomicBool>)>,
 }
 
 impl Engine {
@@ -119,7 +156,8 @@ impl Engine {
             queue: Queue::new(),
             sink,
             paused: false,
-            track_done: false,
+            current_done: None,
+            preloaded: None,
         }
     }
 
@@ -143,20 +181,30 @@ impl Engine {
                 let _ = self.event_tx.send(PlayerEvent::Position(pos));
             }
 
-            // Detect track end: sink emptied naturally.
-            if self.track_done && self.sink.empty() && !self.paused {
-                self.track_done = false;
+            // Gapless transition: current source exhausted, check notifier.
+            let current_fired = self
+                .current_done
+                .as_ref()
+                .map(|d| d.load(Ordering::Acquire))
+                .unwrap_or(false);
+
+            if current_fired {
                 let _ = self.event_tx.send(PlayerEvent::TrackEnded);
-                if self.queue.advance() {
+                if let Some((next_track, next_done)) = self.preloaded.take() {
+                    // Next source already in sink — just advance the queue pointer.
+                    self.current_done = Some(next_done);
+                    self.queue.advance();
+                    let _ = self.event_tx.send(PlayerEvent::TrackStarted(next_track));
+                    self.emit_queue_updated();
+                    self.try_preload_next();
+                } else if self.queue.advance() {
+                    // No preload available; fall back to sequential play.
+                    self.current_done = None;
                     self.play_current();
                 } else {
+                    self.current_done = None;
                     let _ = self.event_tx.send(PlayerEvent::QueueEmpty);
                 }
-            }
-
-            // Mark track as done when sink is about to empty.
-            if !self.sink.empty() {
-                self.track_done = true;
             }
         }
     }
@@ -166,6 +214,8 @@ impl Engine {
         match cmd {
             PlayerCommand::LoadQueue(tracks) => {
                 self.sink.stop();
+                self.current_done = None;
+                self.preloaded = None;
                 self.queue.set(tracks.clone());
                 self.paused = false;
                 self.emit_queue_updated();
@@ -174,6 +224,8 @@ impl Engine {
             }
             PlayerCommand::PlayQueue(tracks) => {
                 self.sink.stop();
+                self.current_done = None;
+                self.preloaded = None;
                 self.queue.set(tracks.clone());
                 self.paused = false;
                 self.emit_queue_updated();
@@ -186,6 +238,8 @@ impl Engine {
             }
             PlayerCommand::JumpTo(idx) => {
                 self.sink.stop();
+                self.current_done = None;
+                self.preloaded = None;
                 self.queue.jump_to(idx);
                 self.paused = false;
                 self.play_current();
@@ -200,12 +254,16 @@ impl Engine {
             }
             PlayerCommand::Stop => {
                 self.sink.stop();
+                self.current_done = None;
+                self.preloaded = None;
                 self.paused = false;
                 let _ = self.event_tx.send(PlayerEvent::Stopped);
                 return true;
             }
             PlayerCommand::Next => {
                 self.sink.stop();
+                self.current_done = None;
+                self.preloaded = None;
                 if self.queue.advance() {
                     self.paused = false;
                     self.play_current();
@@ -215,6 +273,8 @@ impl Engine {
             }
             PlayerCommand::Prev => {
                 self.sink.stop();
+                self.current_done = None;
+                self.preloaded = None;
                 self.queue.prev();
                 self.paused = false;
                 self.play_current();
@@ -227,11 +287,16 @@ impl Engine {
             }
             PlayerCommand::Seek(pos) => {
                 let _ = self.sink.try_seek(pos);
+                // Seeking discards the preloaded source; re-preload from new position.
+                self.preloaded = None;
+                self.try_preload_next();
             }
             PlayerCommand::SeekRelative(delta_secs) => {
                 let pos = self.sink.get_pos();
                 let new_secs = (pos.as_secs_f64() + delta_secs as f64).max(0.0);
                 let _ = self.sink.try_seek(Duration::from_secs_f64(new_secs));
+                self.preloaded = None;
+                self.try_preload_next();
             }
             PlayerCommand::Volume(v) => {
                 self.sink.set_volume(v.clamp(0.0, 2.0));
@@ -262,41 +327,57 @@ impl Engine {
     fn play_current(&mut self) {
         let Some(track) = self.queue.current().cloned() else { return };
         self.sink.stop();
+        self.current_done = None;
+        self.preloaded = None;
 
-        // Load tags synchronously for the current track so Now Playing always
-        // shows full metadata (artist, album, duration). Brief IO (~few ms).
+        // Load tags synchronously so Now Playing shows full metadata immediately.
         let track = track.with_tags();
         if let Some(phys_idx) = self.queue.current_phys_idx() {
             self.queue.update_at(phys_idx, track.clone());
         }
 
-        match play_path(&self.sink, &track.path) {
-            Ok(()) => {
-                // Emit updated queue first so the TUI sees the tagged current entry.
+        match append_path_notified(&self.sink, &track.path) {
+            Ok(done) => {
+                self.sink.play();
+                self.current_done = Some(done);
                 self.emit_queue_updated();
                 let _ = self.event_tx.send(PlayerEvent::TrackStarted(track));
-                self.track_done = false;
+                // Eagerly preload next track for gapless playback.
+                self.try_preload_next();
             }
             Err(e) => {
                 let _ = self.event_tx.send(PlayerEvent::DecodeError {
                     path: track.path.to_string(),
                     err: e.to_string(),
                 });
-                // Try advancing to next track automatically.
                 if self.queue.advance() {
                     self.play_current();
                 }
             }
         }
     }
+
+    fn try_preload_next(&mut self) {
+        if self.preloaded.is_some() { return; }
+        let Some(next) = self.queue.peek_next().cloned() else { return };
+        if let Ok(done) = append_path_notified(&self.sink, &next.path) {
+            self.preloaded = Some((next, done));
+        }
+        // Silently ignore errors: next track will be handled at natural transition.
+    }
 }
 
-/// Append the appropriate source to the sink and start playback.
+/// Append the appropriate source to the sink wrapped in a done-notifier.
+///
+/// Returns the `AtomicBool` that fires when the source is exhausted — callers
+/// use this for gapless transition detection.
 ///
 /// - DSD (DSF/DFF): piped through ffmpeg → PCM f32le 176.4 kHz stereo.
-///   Returns an error with a clear ⚠ message if ffmpeg is not in PATH.
 /// - Everything else: decoded natively via rodio + symphonia.
-fn play_path(sink: &rodio::Sink, path: &Utf8Path) -> anyhow::Result<()> {
+///
+/// Does NOT call `sink.play()` — caller decides whether to start playback.
+fn append_path_notified(sink: &rodio::Sink, path: &Utf8Path) -> anyhow::Result<Arc<AtomicBool>> {
+    let done = Arc::new(AtomicBool::new(false));
     if decoder::is_dsd(path) {
         match crate::transcode::ffmpeg::detect() {
             None => anyhow::bail!(
@@ -306,7 +387,7 @@ fn play_path(sink: &rodio::Sink, path: &Utf8Path) -> anyhow::Result<()> {
             ),
             Some(_) => {
                 let src = decoder::DsdSource::open(path)?;
-                sink.append(src);
+                sink.append(TrackDoneNotifier { inner: src, done: done.clone() });
             }
         }
     } else {
@@ -314,10 +395,9 @@ fn play_path(sink: &rodio::Sink, path: &Utf8Path) -> anyhow::Result<()> {
             .map_err(|e| anyhow::anyhow!("cannot open {path}: {e}"))?;
         let src = rodio::Decoder::new(BufReader::new(file))
             .map_err(|e| anyhow::anyhow!("cannot decode {path}: {e}"))?;
-        sink.append(src);
+        sink.append(TrackDoneNotifier { inner: src, done: done.clone() });
     }
-    sink.play();
-    Ok(())
+    Ok(done)
 }
 
 // ── Public constructor ────────────────────────────────────────────────────────
