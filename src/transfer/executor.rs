@@ -87,12 +87,7 @@ pub fn execute(
             err: None,
         })
         .collect();
-    let mut manifest = Manifest::create(
-        &opts.run_id,
-        "",
-        &opts.manifest_dir,
-        &manifest_entries,
-    )?;
+    let mut manifest = Manifest::create(&opts.run_id, "", &opts.manifest_dir, &manifest_entries)?;
 
     // ── Progress bars (hidden when TUI consumes events via channel) ────────
     let tui_mode = opts.progress_tx.is_some();
@@ -135,8 +130,7 @@ pub fn execute(
         let tmp = tmp_path(&dst);
 
         if let Some(parent) = dst.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("cannot create {parent}"))?;
+            std::fs::create_dir_all(parent).with_context(|| format!("cannot create {parent}"))?;
         }
 
         let _ = manifest.update(&ManifestEntry {
@@ -156,37 +150,35 @@ pub fn execute(
         }
 
         // Decide copy strategy: direct copy or transcode via ffmpeg.
-        let copy_result = if let (Some(from_ext), Some(ref tc)) =
-            (&entry.transcode_from, &opts.transcode)
-        {
-            // Locate the actual source file using the original extension.
-            let src_path = entry.path.with_extension(from_ext);
-            let actual_src = src_root.join(&src_path);
-            let rule = tc.rules.iter()
-                .find(|r| r.from.to_lowercase() == from_ext.to_lowercase());
+        let copy_result =
+            if let (Some(from_ext), Some(ref tc)) = (&entry.transcode_from, &opts.transcode) {
+                // Locate the actual source file using the original extension.
+                let src_path = entry.path.with_extension(from_ext);
+                let actual_src = src_root.join(&src_path);
+                let rule = tc
+                    .rules
+                    .iter()
+                    .find(|r| r.from.to_lowercase() == from_ext.to_lowercase());
 
-            if let Some(rule) = rule {
-                file_bar.set_length(0); // indeterminate during transcode
-                file_bar.set_message(format!(
-                    "[TC] {}",
-                    truncate_path(&entry.path, 65)
-                ));
-                do_transcode(&actual_src, &dst, &tmp, rule, tc)
+                if let Some(rule) = rule {
+                    file_bar.set_length(0); // indeterminate during transcode
+                    file_bar.set_message(format!("[TC] {}", truncate_path(&entry.path, 65)));
+                    do_transcode(&actual_src, &dst, &tmp, rule, tc)
+                } else {
+                    // Rule disappeared at runtime — fall back to direct copy.
+                    let src = src_root.join(&entry.path);
+                    file_bar.set_length(entry.size_bytes);
+                    file_bar.set_position(0);
+                    file_bar.set_message(truncate_path(&entry.path, 70));
+                    copy_with_progress(&src, &tmp, &file_bar, &overall, opts.progress_tx.as_ref())
+                }
             } else {
-                // Rule disappeared at runtime — fall back to direct copy.
                 let src = src_root.join(&entry.path);
                 file_bar.set_length(entry.size_bytes);
                 file_bar.set_position(0);
                 file_bar.set_message(truncate_path(&entry.path, 70));
                 copy_with_progress(&src, &tmp, &file_bar, &overall, opts.progress_tx.as_ref())
-            }
-        } else {
-            let src = src_root.join(&entry.path);
-            file_bar.set_length(entry.size_bytes);
-            file_bar.set_position(0);
-            file_bar.set_message(truncate_path(&entry.path, 70));
-            copy_with_progress(&src, &tmp, &file_bar, &overall, opts.progress_tx.as_ref())
-        };
+            };
 
         // ── Post-copy: rename, preserve mtime, verify ─────────────────────
         let actual_src_for_mtime = if let Some(from_ext) = &entry.transcode_from {
@@ -210,20 +202,18 @@ pub fn execute(
                 // Transcoded files verify that the output exists and is non-empty.
                 // Format-agnostic checksum comparison makes no sense across formats.
                 let verified = if is_transcoded {
-                    dst.metadata().map_or(false, |m| m.len() > 0)
+                    dst.metadata().is_ok_and(|m| m.len() > 0)
                 } else {
                     match opts.verify {
                         Verify::None => true,
-                        Verify::SizeMtime => crate::transfer::verify::size_mtime(
-                            &actual_src_for_mtime,
-                            &dst,
-                        )
-                        .unwrap_or(false),
-                        Verify::Checksum => crate::transfer::verify::checksum(
-                            &actual_src_for_mtime,
-                            &dst,
-                        )
-                        .unwrap_or(false),
+                        Verify::SizeMtime => {
+                            crate::transfer::verify::size_mtime(&actual_src_for_mtime, &dst)
+                                .unwrap_or(false)
+                        }
+                        Verify::Checksum => {
+                            crate::transfer::verify::checksum(&actual_src_for_mtime, &dst)
+                                .unwrap_or(false)
+                        }
                     }
                 };
 
@@ -315,7 +305,9 @@ pub fn execute(
     stats.elapsed_secs = start.elapsed().as_secs_f64();
 
     if let Some(ref tx) = opts.progress_tx {
-        let _ = tx.send(ProgressEvent::Finish { stats: stats.clone() });
+        let _ = tx.send(ProgressEvent::Finish {
+            stats: stats.clone(),
+        });
     }
 
     Ok(stats)
@@ -330,8 +322,8 @@ fn copy_with_progress(
     overall: &ProgressBar,
     progress_tx: Option<&Sender<ProgressEvent>>,
 ) -> anyhow::Result<u64> {
-    let src_file = std::fs::File::open(src.as_std_path())
-        .with_context(|| format!("cannot open {src}"))?;
+    let src_file =
+        std::fs::File::open(src.as_std_path()).with_context(|| format!("cannot open {src}"))?;
     let dst_file = std::fs::OpenOptions::new()
         .write(true)
         .create(true)
@@ -413,18 +405,28 @@ pub fn repair_dest_mtimes(src_root: &Utf8Path, dst_root: &Utf8Path) -> usize {
         .filter(|e| e.file_type().is_file())
     {
         let src_path = entry.path();
-        let Ok(rel) = src_path.strip_prefix(src_root.as_std_path()) else { continue };
+        let Ok(rel) = src_path.strip_prefix(src_root.as_std_path()) else {
+            continue;
+        };
         let dst_path = dst_root.as_std_path().join(rel);
 
-        let Ok(src_meta) = std::fs::metadata(src_path) else { continue };
-        let Ok(dst_meta) = std::fs::metadata(&dst_path) else { continue };
+        let Ok(src_meta) = std::fs::metadata(src_path) else {
+            continue;
+        };
+        let Ok(dst_meta) = std::fs::metadata(&dst_path) else {
+            continue;
+        };
 
         if src_meta.len() != dst_meta.len() {
             continue;
         }
 
-        let Ok(src_mtime) = src_meta.modified() else { continue };
-        let Ok(dst_mtime) = dst_meta.modified() else { continue };
+        let Ok(src_mtime) = src_meta.modified() else {
+            continue;
+        };
+        let Ok(dst_mtime) = dst_meta.modified() else {
+            continue;
+        };
 
         let to_ns = |t: std::time::SystemTime| -> i128 {
             t.duration_since(std::time::UNIX_EPOCH)
@@ -436,8 +438,12 @@ pub fn repair_dest_mtimes(src_root: &Utf8Path, dst_root: &Utf8Path) -> usize {
             continue;
         }
 
-        let Ok(f) = std::fs::OpenOptions::new().write(true).open(&dst_path) else { continue };
-        if f.set_times(FileTimes::new().set_modified(src_mtime)).is_ok() {
+        let Ok(f) = std::fs::OpenOptions::new().write(true).open(&dst_path) else {
+            continue;
+        };
+        if f.set_times(FileTimes::new().set_modified(src_mtime))
+            .is_ok()
+        {
             count += 1;
         }
     }
@@ -447,9 +453,16 @@ pub fn repair_dest_mtimes(src_root: &Utf8Path, dst_root: &Utf8Path) -> usize {
 
 fn preserve_mtime(src: &Utf8Path, dst: &Utf8Path) {
     use std::fs::FileTimes;
-    let Ok(meta) = std::fs::metadata(src.as_std_path()) else { return };
+    let Ok(meta) = std::fs::metadata(src.as_std_path()) else {
+        return;
+    };
     let Ok(mtime) = meta.modified() else { return };
-    let Ok(f) = std::fs::OpenOptions::new().write(true).open(dst.as_std_path()) else { return };
+    let Ok(f) = std::fs::OpenOptions::new()
+        .write(true)
+        .open(dst.as_std_path())
+    else {
+        return;
+    };
     let _ = f.set_times(FileTimes::new().set_modified(mtime));
 }
 
@@ -467,7 +480,9 @@ fn truncate_path(p: &Utf8Path, max: usize) -> String {
     if chars.len() <= max {
         return s.to_owned();
     }
-    let tail: String = chars[chars.len().saturating_sub(max.saturating_sub(1))..].iter().collect();
+    let tail: String = chars[chars.len().saturating_sub(max.saturating_sub(1))..]
+        .iter()
+        .collect();
     format!("…{tail}")
 }
 

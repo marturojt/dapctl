@@ -57,7 +57,9 @@ impl TrackInfo {
     /// Populate artist/album/duration from audio tags (best-effort; never fails).
     pub fn with_tags(mut self) -> Self {
         use lofty::prelude::*;
-        let Ok(tagged) = lofty::read_from_path(self.path.as_std_path()) else { return self };
+        let Ok(tagged) = lofty::read_from_path(self.path.as_std_path()) else {
+            return self;
+        };
 
         if let Some(tag) = tagged.primary_tag() {
             if let Some(a) = tag.artist() {
@@ -76,8 +78,8 @@ impl TrackInfo {
                 }
             }
             self.track_number = tag.track();
-            self.disc_number  = tag.disk();
-            self.year         = tag.year();
+            self.disc_number = tag.disk();
+            self.year = tag.year();
             if let Some(g) = tag.genre() {
                 self.genre = Some(g.into_owned());
             }
@@ -89,9 +91,9 @@ impl TrackInfo {
             self.duration_secs = Some(secs);
         }
         self.sample_rate_hz = props.sample_rate();
-        self.bit_depth       = props.bit_depth();
-        self.bitrate_kbps    = props.audio_bitrate();
-        self.channels        = props.channels();
+        self.bit_depth = props.bit_depth();
+        self.bitrate_kbps = props.audio_bitrate();
+        self.channels = props.channels();
 
         self
     }
@@ -106,8 +108,9 @@ pub struct Queue {
     shuffle_order: Vec<usize>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RepeatMode {
+    #[default]
     Off,
     All,
     One,
@@ -128,6 +131,12 @@ impl RepeatMode {
             Self::All => "all",
             Self::One => "one",
         }
+    }
+}
+
+impl Default for Queue {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -178,12 +187,18 @@ impl Queue {
 
     /// Returns what `advance()` would play next, without changing the cursor.
     pub fn peek_next(&self) -> Option<&TrackInfo> {
-        if self.tracks.is_empty() { return None; }
+        if self.tracks.is_empty() {
+            return None;
+        }
         let next_cursor = match self.repeat {
             RepeatMode::One => self.cursor,
             RepeatMode::All => (self.cursor + 1) % self.tracks.len(),
             RepeatMode::Off => {
-                if self.cursor + 1 < self.tracks.len() { self.cursor + 1 } else { return None; }
+                if self.cursor + 1 < self.tracks.len() {
+                    self.cursor + 1
+                } else {
+                    return None;
+                }
             }
         };
         self.tracks.get(self.effective_idx(next_cursor)?)

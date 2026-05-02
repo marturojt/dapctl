@@ -1,6 +1,9 @@
 use std::io::BufReader;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc::{Receiver, Sender}, Arc};
+use std::sync::{
+    mpsc::{Receiver, Sender},
+    Arc,
+};
 use std::time::Duration;
 
 use camino::Utf8Path;
@@ -41,11 +44,20 @@ pub enum PlayerEvent {
     Position(Duration),
     TrackEnded,
     QueueEmpty,
-    QueueUpdated { tracks: Vec<TrackInfo>, cursor: usize },
+    QueueUpdated {
+        tracks: Vec<TrackInfo>,
+        cursor: usize,
+    },
     Stopped,
-    DecodeError { path: String, err: String },
+    DecodeError {
+        path: String,
+        err: String,
+    },
     /// Background tag scan result for a single queue entry.
-    TrackMetadata { idx: usize, track: TrackInfo },
+    TrackMetadata {
+        idx: usize,
+        track: TrackInfo,
+    },
 }
 
 // ── Player state (returned by handle for TUI display) ─────────────────────────
@@ -74,12 +86,6 @@ impl Default for PlayerStatus {
             repeat: RepeatMode::Off,
             volume: 1.0,
         }
-    }
-}
-
-impl Default for RepeatMode {
-    fn default() -> Self {
-        RepeatMode::Off
     }
 }
 
@@ -124,10 +130,18 @@ where
     S: rodio::Source,
     S::Item: rodio::Sample,
 {
-    fn current_frame_len(&self) -> Option<usize> { self.inner.current_frame_len() }
-    fn channels(&self) -> u16                    { self.inner.channels() }
-    fn sample_rate(&self) -> u32                 { self.inner.sample_rate() }
-    fn total_duration(&self) -> Option<Duration> { self.inner.total_duration() }
+    fn current_frame_len(&self) -> Option<usize> {
+        self.inner.current_frame_len()
+    }
+    fn channels(&self) -> u16 {
+        self.inner.channels()
+    }
+    fn sample_rate(&self) -> u32 {
+        self.inner.sample_rate()
+    }
+    fn total_duration(&self) -> Option<Duration> {
+        self.inner.total_duration()
+    }
 }
 
 // ── Engine (runs in a dedicated thread) ───────────────────────────────────────
@@ -310,7 +324,10 @@ impl Engine {
         std::thread::spawn(move || {
             for (idx, track) in tracks.into_iter().enumerate() {
                 let tagged = track.with_tags();
-                if tx.send(PlayerEvent::TrackMetadata { idx, track: tagged }).is_err() {
+                if tx
+                    .send(PlayerEvent::TrackMetadata { idx, track: tagged })
+                    .is_err()
+                {
                     break;
                 }
             }
@@ -325,7 +342,9 @@ impl Engine {
     }
 
     fn play_current(&mut self) {
-        let Some(track) = self.queue.current().cloned() else { return };
+        let Some(track) = self.queue.current().cloned() else {
+            return;
+        };
         self.sink.stop();
         self.current_done = None;
         self.preloaded = None;
@@ -358,8 +377,12 @@ impl Engine {
     }
 
     fn try_preload_next(&mut self) {
-        if self.preloaded.is_some() { return; }
-        let Some(next) = self.queue.peek_next().cloned() else { return };
+        if self.preloaded.is_some() {
+            return;
+        }
+        let Some(next) = self.queue.peek_next().cloned() else {
+            return;
+        };
         if let Ok(done) = append_path_notified(&self.sink, &next.path) {
             self.preloaded = Some((next, done));
         }
@@ -387,7 +410,10 @@ fn append_path_notified(sink: &rodio::Sink, path: &Utf8Path) -> anyhow::Result<A
             ),
             Some(_) => {
                 let src = decoder::DsdSource::open(path)?;
-                sink.append(TrackDoneNotifier { inner: src, done: done.clone() });
+                sink.append(TrackDoneNotifier {
+                    inner: src,
+                    done: done.clone(),
+                });
             }
         }
     } else {
@@ -395,7 +421,10 @@ fn append_path_notified(sink: &rodio::Sink, path: &Utf8Path) -> anyhow::Result<A
             .map_err(|e| anyhow::anyhow!("cannot open {path}: {e}"))?;
         let src = rodio::Decoder::new(BufReader::new(file))
             .map_err(|e| anyhow::anyhow!("cannot decode {path}: {e}"))?;
-        sink.append(TrackDoneNotifier { inner: src, done: done.clone() });
+        sink.append(TrackDoneNotifier {
+            inner: src,
+            done: done.clone(),
+        });
     }
     Ok(done)
 }

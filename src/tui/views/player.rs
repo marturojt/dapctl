@@ -1,11 +1,11 @@
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
-use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Gauge, List, ListItem, ListState, Paragraph};
+use ratatui::Frame;
 
 use crate::player::engine::{PlayerEvent, PlayerHandle, PlayerStatus};
 use crate::player::library::{LibraryIndex, LibraryNode};
@@ -24,7 +24,7 @@ impl PlayerFocus {
     fn toggle(self) -> Self {
         match self {
             Self::Library => Self::Queue,
-            Self::Queue   => Self::Library,
+            Self::Queue => Self::Library,
         }
     }
 }
@@ -68,7 +68,11 @@ impl LibraryState {
     }
 
     pub fn rebuild_flat(&mut self) {
-        let query = if self.search_active { self.search_input.value() } else { "" };
+        let query = if self.search_active {
+            self.search_input.value()
+        } else {
+            ""
+        };
         self.flat = self.index.build_flat(&self.expanded, query);
         if self.flat.is_empty() {
             self.list_state.select(None);
@@ -104,9 +108,16 @@ impl LibraryState {
 
     /// Tracks for the currently selected Album node, if any.
     pub fn selected_album_tracks(&self) -> Option<Vec<TrackInfo>> {
-        if let Some(LibraryNode::Album { artist: ai, album: ali }) = self.flat.get(self.cursor) {
-            self.index.artists.get(*ai)?
-                .albums.get(*ali)
+        if let Some(LibraryNode::Album {
+            artist: ai,
+            album: ali,
+        }) = self.flat.get(self.cursor)
+        {
+            self.index
+                .artists
+                .get(*ai)?
+                .albums
+                .get(*ali)
                 .map(|al| al.tracks.clone())
         } else {
             None
@@ -125,14 +136,14 @@ pub enum PlayerSource {
 impl PlayerSource {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Library     => "L library",
+            Self::Library => "L library",
             Self::Destination => "D destination",
         }
     }
 
     pub fn toggle(self) -> Self {
         match self {
-            Self::Library     => Self::Destination,
+            Self::Library => Self::Destination,
             Self::Destination => Self::Library,
         }
     }
@@ -270,7 +281,9 @@ pub fn draw(f: &mut Frame, area: Rect, state: &mut PlayerState, theme: &Theme) {
 // ── Library pane ──────────────────────────────────────────────────────────────
 
 fn draw_library(f: &mut Frame, area: Rect, state: &mut PlayerState, theme: &Theme) {
-    let Some(ref mut lib) = state.library else { return };
+    let Some(ref mut lib) = state.library else {
+        return;
+    };
     let is_focused = state.focus == PlayerFocus::Library;
     let border_style = Style::default().fg(if is_focused { theme.fg } else { theme.muted });
 
@@ -279,7 +292,10 @@ fn draw_library(f: &mut Frame, area: Rect, state: &mut PlayerState, theme: &Them
         format!(" / {}_ ", lib.search_input.value())
     } else if lib.scanning {
         if lib.scan_total > 0 {
-            format!(" library  ({}/{} scanning...) ", lib.scan_done, lib.scan_total)
+            format!(
+                " library  ({}/{} scanning...) ",
+                lib.scan_done, lib.scan_total
+            )
         } else {
             " library  (scanning...) ".to_owned()
         }
@@ -312,42 +328,50 @@ fn draw_library(f: &mut Frame, area: Rect, state: &mut PlayerState, theme: &Them
     let w = inner.width as usize;
     let cursor = lib.cursor;
 
-    let items: Vec<ListItem> = lib.flat.iter().enumerate().map(|(i, node)| {
-        let sel = i == cursor;
-        match node {
-            LibraryNode::Artist(ai) => {
-                let artist = &lib.index.artists[*ai];
-                let exp = lib.expanded.get(*ai).copied().unwrap_or(false);
-                let icon = if exp { "▼ " } else { "▶ " };
-                let label = trunc(&format!("{icon}{}", artist.name), w);
-                let style = if sel && is_focused {
-                    Style::default()
-                        .fg(theme.sel_fg)
-                        .bg(theme.sel_bg)
-                        .add_modifier(Modifier::BOLD)
-                } else if sel {
-                    Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(theme.fg)
-                };
-                ListItem::new(Line::from(Span::styled(label, style)))
+    let items: Vec<ListItem> = lib
+        .flat
+        .iter()
+        .enumerate()
+        .map(|(i, node)| {
+            let sel = i == cursor;
+            match node {
+                LibraryNode::Artist(ai) => {
+                    let artist = &lib.index.artists[*ai];
+                    let exp = lib.expanded.get(*ai).copied().unwrap_or(false);
+                    let icon = if exp { "▼ " } else { "▶ " };
+                    let label = trunc(&format!("{icon}{}", artist.name), w);
+                    let style = if sel && is_focused {
+                        Style::default()
+                            .fg(theme.sel_fg)
+                            .bg(theme.sel_bg)
+                            .add_modifier(Modifier::BOLD)
+                    } else if sel {
+                        Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(theme.fg)
+                    };
+                    ListItem::new(Line::from(Span::styled(label, style)))
+                }
+                LibraryNode::Album {
+                    artist: ai,
+                    album: ali,
+                } => {
+                    let album = &lib.index.artists[*ai].albums[*ali];
+                    let count = format!("({})", album.tracks.len());
+                    let name_w = w.saturating_sub(count.len() + 4);
+                    let label = format!("  {:<name_w$}  {count}", trunc(&album.name, name_w));
+                    let style = if sel && is_focused {
+                        Style::default().fg(theme.sel_fg).bg(theme.sel_bg)
+                    } else if sel {
+                        Style::default().fg(theme.fg)
+                    } else {
+                        Style::default().fg(theme.muted)
+                    };
+                    ListItem::new(Line::from(Span::styled(label, style)))
+                }
             }
-            LibraryNode::Album { artist: ai, album: ali } => {
-                let album = &lib.index.artists[*ai].albums[*ali];
-                let count = format!("({})", album.tracks.len());
-                let name_w = w.saturating_sub(count.len() + 4);
-                let label = format!("  {:<name_w$}  {count}", trunc(&album.name, name_w));
-                let style = if sel && is_focused {
-                    Style::default().fg(theme.sel_fg).bg(theme.sel_bg)
-                } else if sel {
-                    Style::default().fg(theme.fg)
-                } else {
-                    Style::default().fg(theme.muted)
-                };
-                ListItem::new(Line::from(Span::styled(label, style)))
-            }
-        }
-    }).collect();
+        })
+        .collect();
 
     let list = List::new(items);
     f.render_stateful_widget(list, inner, &mut lib.list_state);
@@ -383,25 +407,32 @@ fn draw_now_playing(f: &mut Frame, area: Rect, state: &PlayerState, theme: &Them
     let track = state.status.current.as_ref();
 
     let title_line = match track {
-        None    => Line::from(Span::styled("  — idle —", Style::default().fg(theme.muted))),
+        None => Line::from(Span::styled("  — idle —", Style::default().fg(theme.muted))),
         Some(t) => {
-            let pause_mark = if state.status.paused { "  [paused]" } else { "" };
+            let pause_mark = if state.status.paused {
+                "  [paused]"
+            } else {
+                ""
+            };
             Line::from(vec![
                 Span::raw("  "),
-                Span::styled(&t.title, Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    &t.title,
+                    Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(pause_mark, Style::default().fg(theme.warn)),
             ])
         }
     };
 
     let artist_album_line = match track {
-        None    => Line::raw(""),
+        None => Line::raw(""),
         Some(t) => {
             let text = match (&t.artist, &t.album) {
                 (Some(a), Some(al)) => format!("  {}  ·  {}", a, al),
-                (Some(a), None)     => format!("  {}", a),
-                (None,    Some(al)) => format!("  {}", al),
-                (None,    None)     => String::new(),
+                (Some(a), None) => format!("  {}", a),
+                (None, Some(al)) => format!("  {}", al),
+                (None, None) => String::new(),
             };
             Line::from(Span::styled(text, Style::default().fg(theme.muted)))
         }
@@ -410,7 +441,7 @@ fn draw_now_playing(f: &mut Frame, area: Rect, state: &PlayerState, theme: &Them
     let meta_line = Line::from(Span::styled(
         match track {
             Some(t) => fmt_hifi_line(t, state.volume),
-            None    => format!("  vol {}%", (state.volume * 100.0).round() as u32),
+            None => format!("  vol {}%", (state.volume * 100.0).round() as u32),
         },
         Style::default().fg(theme.muted),
     ));
@@ -432,7 +463,9 @@ fn draw_now_playing(f: &mut Frame, area: Rect, state: &PlayerState, theme: &Them
 
     // Progress gauge
     let pos = state.status.position;
-    let dur = track.and_then(|t| t.duration_secs).map(Duration::from_secs_f64);
+    let dur = track
+        .and_then(|t| t.duration_secs)
+        .map(Duration::from_secs_f64);
     let ratio = match dur {
         Some(d) if d.as_secs() > 0 => (pos.as_secs_f64() / d.as_secs_f64()).clamp(0.0, 1.0),
         _ => 0.0,
@@ -446,7 +479,10 @@ fn draw_now_playing(f: &mut Frame, area: Rect, state: &PlayerState, theme: &Them
     } else {
         bottom_area.height
     };
-    let gauge_area = Rect { height: gauge_height, ..bottom_area };
+    let gauge_area = Rect {
+        height: gauge_height,
+        ..bottom_area
+    };
 
     f.render_widget(
         Gauge::default()
@@ -486,9 +522,11 @@ fn draw_queue(f: &mut Frame, area: Rect, state: &mut PlayerState, theme: &Theme)
 
     let has_library = state.library.is_some();
     let queue_focused = !has_library || state.focus == PlayerFocus::Queue;
-    let border_style = Style::default().fg(
-        if queue_focused && has_library { theme.fg } else { theme.muted }
-    );
+    let border_style = Style::default().fg(if queue_focused && has_library {
+        theme.fg
+    } else {
+        theme.muted
+    });
 
     let block = Block::default()
         .title(block_title.as_str())
@@ -500,33 +538,40 @@ fn draw_queue(f: &mut Frame, area: Rect, state: &mut PlayerState, theme: &Theme)
 
     let w = inner.width as usize;
     let marker_w = 2usize;
-    let dur_w    = 7usize;
-    let sep      = 2usize;
-    let artist_w = (w / 4).max(10).min(22);
-    let title_w  = w.saturating_sub(marker_w + artist_w + sep + sep + dur_w).max(4);
+    let dur_w = 7usize;
+    let sep = 2usize;
+    let artist_w = (w / 4).clamp(10, 22);
+    let title_w = w
+        .saturating_sub(marker_w + artist_w + sep + sep + dur_w)
+        .max(4);
 
-    let items: Vec<ListItem> = tracks.iter().enumerate().map(|(i, t)| {
-        let is_current = i == cursor;
-        let marker = if is_current { "▶ " } else { "  " };
-        let base_style = if is_current {
-            Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(theme.fg)
-        };
+    let items: Vec<ListItem> = tracks
+        .iter()
+        .enumerate()
+        .map(|(i, t)| {
+            let is_current = i == cursor;
+            let marker = if is_current { "▶ " } else { "  " };
+            let base_style = if is_current {
+                Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(theme.fg)
+            };
 
-        let artist = t.artist.as_deref().unwrap_or("");
-        let dur = t.duration_secs
-            .map(|s| fmt_dur(Duration::from_secs_f64(s)))
-            .unwrap_or_default();
+            let artist = t.artist.as_deref().unwrap_or("");
+            let dur = t
+                .duration_secs
+                .map(|s| fmt_dur(Duration::from_secs_f64(s)))
+                .unwrap_or_default();
 
-        let label = format!(
-            "{marker}{:<artist_w$}  {:<title_w$}  {:>dur_w$}",
-            trunc(artist, artist_w),
-            trunc(&t.title, title_w),
-            dur,
-        );
-        ListItem::new(Line::from(Span::styled(label, base_style)))
-    }).collect();
+            let label = format!(
+                "{marker}{:<artist_w$}  {:<title_w$}  {:>dur_w$}",
+                trunc(artist, artist_w),
+                trunc(&t.title, title_w),
+                dur,
+            );
+            ListItem::new(Line::from(Span::styled(label, base_style)))
+        })
+        .collect();
 
     let list = List::new(items).block(block);
     f.render_stateful_widget(list, area, &mut state.queue_list_state);
@@ -535,7 +580,7 @@ fn draw_queue(f: &mut Frame, area: Rect, state: &mut PlayerState, theme: &Theme)
 // ── Hints ─────────────────────────────────────────────────────────────────────
 
 fn draw_hints(f: &mut Frame, area: Rect, state: &PlayerState, theme: &Theme) {
-    let repeat_label  = state.status.repeat.label();
+    let repeat_label = state.status.repeat.label();
     let shuffle_label = if state.status.shuffle { "on" } else { "off" };
 
     let (line1, line2) = if state.library.is_some() {
@@ -591,9 +636,9 @@ fn fmt_hifi_line(track: &TrackInfo, volume: f32) -> String {
     }
     match (track.sample_rate_hz, track.bit_depth) {
         (Some(sr), Some(bd)) => parts.push(format!("{}/{bd}bit", fmt_sr(sr))),
-        (Some(sr), None)     => parts.push(fmt_sr(sr)),
-        (None,     Some(bd)) => parts.push(format!("{bd}bit")),
-        (None,     None)     => {}
+        (Some(sr), None) => parts.push(fmt_sr(sr)),
+        (None, Some(bd)) => parts.push(format!("{bd}bit")),
+        (None, None) => {}
     }
     if let Some(ch) = track.channels {
         parts.push(format!("{ch}ch"));
@@ -638,7 +683,7 @@ pub fn handle_key(
 
     // Route to search handler when library search is active and library is focused
     if state.focus == PlayerFocus::Library
-        && state.library.as_ref().map_or(false, |l| l.search_active)
+        && state.library.as_ref().is_some_and(|l| l.search_active)
     {
         return handle_search_key(state, handle, key);
     }
@@ -648,10 +693,8 @@ pub fn handle_key(
         K::Char('q') | K::Esc => return true,
 
         // Switch focus between library and queue panes
-        K::Tab => {
-            if state.library.is_some() {
-                state.focus = state.focus.toggle();
-            }
+        K::Tab if state.library.is_some() => {
+            state.focus = state.focus.toggle();
         }
 
         // Playback controls (global — work regardless of focus)
@@ -678,7 +721,7 @@ pub fn handle_key(
             state.volume = (state.volume - 0.05).max(0.0);
             handle.send(crate::player::engine::PlayerCommand::Volume(state.volume));
         }
-        K::Left  => handle.send(crate::player::engine::PlayerCommand::SeekRelative(-30)),
+        K::Left => handle.send(crate::player::engine::PlayerCommand::SeekRelative(-30)),
         K::Right => handle.send(crate::player::engine::PlayerCommand::SeekRelative(30)),
 
         // Activate library search (library must be focused)
@@ -709,13 +752,17 @@ pub fn handle_key(
                 }
             }
             PlayerFocus::Queue => {
-                let prev = state.queue_list_state.selected().unwrap_or(0).saturating_sub(1);
+                let prev = state
+                    .queue_list_state
+                    .selected()
+                    .unwrap_or(0)
+                    .saturating_sub(1);
                 state.queue_list_state.select(Some(prev));
             }
         },
         K::Enter => match state.focus {
             PlayerFocus::Library => handle_library_enter(state, handle),
-            PlayerFocus::Queue   => {
+            PlayerFocus::Queue => {
                 if let Some(idx) = state.queue_list_state.selected() {
                     handle.send(crate::player::engine::PlayerCommand::JumpTo(idx));
                 }
@@ -765,7 +812,8 @@ fn handle_search_key(
         // Anything else feeds the search input
         _ => {
             if let Some(ref mut lib) = state.library {
-                lib.search_input.handle_event(&crossterm::event::Event::Key(key));
+                lib.search_input
+                    .handle_event(&crossterm::event::Event::Key(key));
                 lib.rebuild_flat();
             }
         }
@@ -780,17 +828,25 @@ fn handle_library_enter(state: &mut PlayerState, handle: &PlayerHandle) {
         PlayAlbum(Vec<TrackInfo>),
     }
 
-    let action = state.library.as_ref().and_then(|lib| {
-        match lib.flat.get(lib.cursor)? {
+    let action = state
+        .library
+        .as_ref()
+        .and_then(|lib| match lib.flat.get(lib.cursor)? {
             LibraryNode::Artist(_) => Some(LibAction::ToggleExpand),
-            LibraryNode::Album { artist: ai, album: ali } => {
-                let tracks = lib.index.artists.get(*ai)?
-                    .albums.get(*ali)
+            LibraryNode::Album {
+                artist: ai,
+                album: ali,
+            } => {
+                let tracks = lib
+                    .index
+                    .artists
+                    .get(*ai)?
+                    .albums
+                    .get(*ali)
                     .map(|al| al.tracks.clone())?;
                 Some(LibAction::PlayAlbum(tracks))
             }
-        }
-    });
+        });
 
     match action {
         Some(LibAction::ToggleExpand) => {

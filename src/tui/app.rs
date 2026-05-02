@@ -7,7 +7,7 @@ use std::time::Instant;
 use camino::Utf8PathBuf;
 
 use crate::config::{Mode, SyncProfile};
-use crate::player::engine::{PlayerHandle, PlayerEvent};
+use crate::player::engine::{PlayerEvent, PlayerHandle};
 use crate::scan::ScanResult;
 use crate::transfer::{ProgressEvent, Stats};
 use crate::tui::theme::Theme;
@@ -192,7 +192,11 @@ impl FileBrowserState {
 
     /// Total selectable items: +1 for the "select" header in normal mode.
     pub fn total_items(&self) -> usize {
-        if self.at_drives_root { self.entries.len() } else { self.entries.len() + 1 }
+        if self.at_drives_root {
+            self.entries.len()
+        } else {
+            self.entries.len() + 1
+        }
     }
 
     pub fn move_down(&mut self) {
@@ -247,7 +251,10 @@ impl FileBrowserState {
         if let Some(parent) = self.current.parent() {
             self.current = camino::Utf8PathBuf::from(parent);
             self.refresh();
-            self.cursor = self.entries.iter().position(|e| e == &prev)
+            self.cursor = self
+                .entries
+                .iter()
+                .position(|e| e == &prev)
                 .map(|i| i + 1) // +1 for "select" item
                 .unwrap_or(0);
         }
@@ -255,15 +262,24 @@ impl FileBrowserState {
 
     /// Human-readable label for the current location.
     pub fn location_label(&self) -> &str {
-        if self.at_drives_root { "drives" } else { self.current.as_str() }
+        if self.at_drives_root {
+            "drives"
+        } else {
+            self.current.as_str()
+        }
     }
 }
 
 fn is_fs_root(path: &camino::Utf8Path) -> bool {
     #[cfg(windows)]
-    { let s = path.as_str(); s.len() <= 3 && s.contains(':') }
+    {
+        let s = path.as_str();
+        s.len() <= 3 && s.contains(':')
+    }
     #[cfg(not(windows))]
-    { path.as_str() == "/" }
+    {
+        path.as_str() == "/"
+    }
 }
 
 fn available_drives() -> Vec<String> {
@@ -275,7 +291,9 @@ fn available_drives() -> Vec<String> {
             .collect()
     }
     #[cfg(not(windows))]
-    { vec!["/".to_owned()] }
+    {
+        vec!["/".to_owned()]
+    }
 }
 
 // ── Wizard state ──────────────────────────────────────────────────────────────
@@ -301,10 +319,15 @@ impl NewProfileState {
 
         // Destination browser: start at the first detected removable drive if
         // available; otherwise fall back to drives root.
-        let dest_browser = scan.identified.first()
+        let dest_browser = scan
+            .identified
+            .first()
             .map(|id| FileBrowserState::new(camino::Utf8PathBuf::from(&id.mount.mount_point)))
-            .or_else(|| scan.unidentified.first()
-                .map(|m| FileBrowserState::new(camino::Utf8PathBuf::from(&m.mount_point))))
+            .or_else(|| {
+                scan.unidentified
+                    .first()
+                    .map(|m| FileBrowserState::new(camino::Utf8PathBuf::from(&m.mount_point)))
+            })
             .unwrap_or_else(FileBrowserState::drives_root);
 
         Self {
@@ -338,9 +361,14 @@ impl NewProfileState {
         let manual_idx = scan.identified.len();
         let dest = &profile.profile.destination;
         let (dest_choice, dest_browser) = if let Some(dap_id) = dest.strip_prefix("auto:") {
-            let idx = scan.identified.iter().position(|id| id.dap_id == dap_id)
+            let idx = scan
+                .identified
+                .iter()
+                .position(|id| id.dap_id == dap_id)
                 .unwrap_or(manual_idx);
-            let browser = scan.identified.first()
+            let browser = scan
+                .identified
+                .first()
                 .map(|id| FileBrowserState::new(camino::Utf8PathBuf::from(&id.mount.mount_point)))
                 .unwrap_or_else(FileBrowserState::drives_root);
             (idx, Some(browser))
@@ -381,11 +409,13 @@ impl NewProfileState {
     pub fn destination(&self, scan: &crate::scan::ScanResult) -> String {
         let manual_idx = scan.identified.len();
         if self.dest_choice == manual_idx {
-            self.dest_browser.as_ref()
+            self.dest_browser
+                .as_ref()
                 .map(|b| b.current.to_string())
                 .unwrap_or_default()
         } else {
-            scan.identified.get(self.dest_choice)
+            scan.identified
+                .get(self.dest_choice)
                 .map(|id| format!("auto:{}", id.dap_id))
                 .unwrap_or_default()
         }
@@ -396,10 +426,13 @@ impl NewProfileState {
     }
 
     pub fn selected_mode(&self) -> &'static str {
-        if self.mode_choice == 0 { "additive" } else { "mirror" }
+        if self.mode_choice == 0 {
+            "additive"
+        } else {
+            "mirror"
+        }
     }
 }
-
 
 // ── Progress view state ───────────────────────────────────────────────────────
 
@@ -478,7 +511,11 @@ impl ProgressState {
             ProgressEvent::FileDone { path, bytes: _ } => {
                 self.copied += 1;
                 self.current_file.clear();
-                self.push_recent(RecentLine { icon: "[+]", path, ok: true });
+                self.push_recent(RecentLine {
+                    icon: "[+]",
+                    path,
+                    ok: true,
+                });
             }
             ProgressEvent::FileFail { path, err } => {
                 self.failed += 1;
@@ -491,7 +528,11 @@ impl ProgressState {
             }
             ProgressEvent::DeleteDone { path } => {
                 self.deleted += 1;
-                self.push_recent(RecentLine { icon: "[-]", path, ok: true });
+                self.push_recent(RecentLine {
+                    icon: "[-]",
+                    path,
+                    ok: true,
+                });
             }
             ProgressEvent::Finish { stats } => {
                 self.finished = true;
@@ -558,8 +599,8 @@ pub struct LogEntry {
 impl LogEntry {
     pub fn level_str(&self) -> &'static str {
         match self.level {
-            LogLevel::Info  => "info",
-            LogLevel::Warn  => "warn",
+            LogLevel::Info => "info",
+            LogLevel::Warn => "warn",
             LogLevel::Error => "error",
             LogLevel::Other => "?",
         }
@@ -587,7 +628,10 @@ impl App {
 
         let scan = crate::scan::run_scan().unwrap_or_else(|e| {
             tracing::warn!(err = %e, "scan failed");
-            ScanResult { identified: vec![], unidentified: vec![] }
+            ScanResult {
+                identified: vec![],
+                unidentified: vec![],
+            }
         });
 
         Ok(Self {
@@ -697,7 +741,9 @@ impl App {
     }
 
     pub fn enter_clone_profile(&mut self) {
-        let Some((_, profile)) = self.profiles.get(self.profile_idx) else { return };
+        let Some((_, profile)) = self.profiles.get(self.profile_idx) else {
+            return;
+        };
         let profile = profile.clone();
         self.wizard = Some(NewProfileState::from_clone(&profile, &self.scan));
         self.view = View::NewProfile;
@@ -723,13 +769,17 @@ impl App {
 
     /// Open the player pre-loaded with tracks from the selected profile's source.
     pub fn enter_player_from_profile(&mut self) {
-        let source = self.profiles.get(self.profile_idx)
+        let source = self
+            .profiles
+            .get(self.profile_idx)
             .map(|(_, p)| p.profile.source.clone());
 
         self.enter_player();
 
         let Some(src) = source else { return };
-        let Some(ref handle) = self.player_handle else { return };
+        let Some(ref handle) = self.player_handle else {
+            return;
+        };
 
         let tracks = collect_source_tracks(&src);
         if tracks.is_empty() {
@@ -771,13 +821,10 @@ impl App {
     pub fn drain_scan(&mut self) {
         use crate::player::scanner::ScanEvent;
         use crate::tui::views::player::LibraryState;
-        loop {
-            let event = match self.scan_rx.as_ref() {
-                Some(rx) => match rx.try_recv() {
-                    Ok(e) => e,
-                    Err(_) => break,
-                },
-                None => break,
+        while let Some(rx) = self.scan_rx.as_ref() {
+            let event = match rx.try_recv() {
+                Ok(e) => e,
+                Err(_) => break,
             };
             match event {
                 ScanEvent::Progress { done, total } => {
@@ -878,8 +925,8 @@ impl App {
 // ── Player helpers ────────────────────────────────────────────────────────────
 
 const AUDIO_EXTS: &[&str] = &[
-    "flac", "mp3", "aac", "ogg", "opus", "wav", "alac", "m4a",
-    "dsf", "dff", "wv", "wma", "aiff", "aif", "ape",
+    "flac", "mp3", "aac", "ogg", "opus", "wav", "alac", "m4a", "dsf", "dff", "wv", "wma", "aiff",
+    "aif", "ape",
 ];
 
 /// Walk `source_dir` and return all audio files as `TrackInfo` objects,
@@ -911,7 +958,8 @@ fn collect_source_tracks(source_dir: &str) -> Vec<crate::player::queue::TrackInf
 fn latest_jsonl_path() -> Option<std::path::PathBuf> {
     let dirs = directories::ProjectDirs::from("", "", "dapctl")?;
     let runs_dir = dirs.data_local_dir().join("runs");
-    let mut files: Vec<_> = std::fs::read_dir(&runs_dir).ok()?
+    let mut files: Vec<_> = std::fs::read_dir(&runs_dir)
+        .ok()?
         .filter_map(|e| e.ok())
         .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("jsonl"))
         .collect();
@@ -934,10 +982,10 @@ fn parse_jsonl_line(line: &str) -> LogEntry {
     let time = time.get(11..19).unwrap_or(&time).to_owned();
 
     let level = match v["level"].as_str().unwrap_or("") {
-        "info"  => LogLevel::Info,
-        "warn"  => LogLevel::Warn,
+        "info" => LogLevel::Info,
+        "warn" => LogLevel::Warn,
         "error" => LogLevel::Error,
-        _       => LogLevel::Other,
+        _ => LogLevel::Other,
     };
 
     let fields = v["fields"].as_object();
@@ -948,19 +996,26 @@ fn parse_jsonl_line(line: &str) -> LogEntry {
         .to_owned();
 
     // Build a compact detail string from the remaining fields.
-    let detail = fields.map(|f| {
-        f.iter()
-            .filter(|(k, _)| k.as_str() != "event")
-            .map(|(k, val)| {
-                let v = match val {
-                    serde_json::Value::String(s) => s.clone(),
-                    other => other.to_string(),
-                };
-                format!("{k}={v}")
-            })
-            .collect::<Vec<_>>()
-            .join("  ")
-    }).unwrap_or_default();
+    let detail = fields
+        .map(|f| {
+            f.iter()
+                .filter(|(k, _)| k.as_str() != "event")
+                .map(|(k, val)| {
+                    let v = match val {
+                        serde_json::Value::String(s) => s.clone(),
+                        other => other.to_string(),
+                    };
+                    format!("{k}={v}")
+                })
+                .collect::<Vec<_>>()
+                .join("  ")
+        })
+        .unwrap_or_default();
 
-    LogEntry { time, level, event, detail }
+    LogEntry {
+        time,
+        level,
+        event,
+        detail,
+    }
 }
