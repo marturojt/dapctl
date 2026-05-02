@@ -10,46 +10,38 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  # ── Linux static binaries (musl) via cargo-zigbuild ──────────────────────────
+  # ── Linux x86_64 + aarch64 (native runners, glibc) ───────────────────────────
   build-linux:
     name: Linux (${{ matrix.target }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        target:
-          - x86_64-unknown-linux-musl
-          - aarch64-unknown-linux-musl
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+
     steps:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
 
-      - uses: mlugg/setup-zig@v2
-
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-zigbuild
-
       - name: Install audio build dependencies
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
 
       - name: Build
-        run: cargo zigbuild --release --target ${{ matrix.target }}
-        env:
-          PKG_CONFIG_ALLOW_CROSS: "1"
+        run: cargo build --release
 
       - name: Package
         run: |
-          BIN="target/${{ matrix.target }}/release/dapctl"
           ARCHIVE="dapctl-${{ github.ref_name }}-${{ matrix.target }}.tar.gz"
-          tar -czf "$ARCHIVE" -C "$(dirname "$BIN")" "$(basename "$BIN")"
+          tar -czf "$ARCHIVE" -C target/release dapctl
           echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
