@@ -1,5 +1,6 @@
 pub mod decoder;
 pub mod engine;
+pub mod history;
 pub mod library;
 pub mod queue;
 pub mod scanner;

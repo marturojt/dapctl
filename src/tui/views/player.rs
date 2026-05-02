@@ -1,5 +1,5 @@
 use std::sync::mpsc::Receiver;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -160,6 +160,8 @@ pub struct PlayerState {
     pub volume: f32,
     pub library: Option<LibraryState>,
     pub focus: PlayerFocus,
+    /// `(set_at, requested_duration)` — used to compute remaining time.
+    pub sleep_set: Option<(Instant, Duration)>,
 }
 
 impl PlayerState {
@@ -175,6 +177,7 @@ impl PlayerState {
             volume: 1.0,
             library: None,
             focus: PlayerFocus::Queue,
+            sleep_set: None,
         }
     }
 
@@ -218,6 +221,14 @@ impl PlayerState {
                 }
                 PlayerEvent::DecodeError { path, err } => {
                     self.flash = Some(format!("{err}  ({path})"));
+                }
+                PlayerEvent::SleepTimerSet(dur) => {
+                    self.sleep_set = dur.map(|d| (Instant::now(), d));
+                }
+                PlayerEvent::SleepTimerFired => {
+                    self.sleep_set = None;
+                    self.status.paused = true;
+                    self.flash = Some("sleep timer — playback paused".to_owned());
                 }
             }
         }
@@ -582,22 +593,27 @@ fn draw_queue(f: &mut Frame, area: Rect, state: &mut PlayerState, theme: &Theme)
 fn draw_hints(f: &mut Frame, area: Rect, state: &PlayerState, theme: &Theme) {
     let repeat_label = state.status.repeat.label();
     let shuffle_label = if state.status.shuffle { "on" } else { "off" };
+    let sleep_label = fmt_sleep_label(state);
 
     let (line1, line2) = if state.library.is_some() {
         match state.focus {
             PlayerFocus::Library => (
                 "  space pause · n/p next/prev · ←/→ seek · +/- vol · Tab→queue · q back",
-                "  j/k nav · Enter expand/play · / search",
+                &*format!("  j/k nav · Enter expand/play · / search · t sleep:{sleep_label}"),
             ),
             PlayerFocus::Queue => (
                 "  space pause · n/p next/prev · ←/→ seek · +/- vol · Tab→library · q back",
-                &*format!("  j/k scroll · Enter jump · r repeat:{repeat_label} · s shuffle:{shuffle_label}"),
+                &*format!(
+                    "  j/k scroll · Enter jump · r repeat:{repeat_label} · s shuffle:{shuffle_label} · t sleep:{sleep_label}"
+                ),
             ),
         }
     } else {
         (
             "  space play/pause · n/p next/prev · ←/→ seek ±30s · +/- vol · q back",
-            &*format!("  j/k scroll · Enter jump · r repeat:{repeat_label} · s shuffle:{shuffle_label} · L/D source"),
+            &*format!(
+                "  j/k scroll · Enter jump · r repeat:{repeat_label} · s shuffle:{shuffle_label} · t sleep:{sleep_label} · L/D source"
+            ),
         )
     };
 
@@ -612,6 +628,20 @@ fn draw_hints(f: &mut Frame, area: Rect, state: &PlayerState, theme: &Theme) {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+fn fmt_sleep_label(state: &PlayerState) -> String {
+    match state.sleep_set {
+        None => "off".to_owned(),
+        Some((set_at, dur)) => {
+            let elapsed = set_at.elapsed();
+            if elapsed >= dur {
+                "off".to_owned()
+            } else {
+                fmt_dur(dur - elapsed)
+            }
+        }
+    }
+}
 
 fn fmt_dur(d: Duration) -> String {
     let t = d.as_secs();
@@ -711,6 +741,17 @@ pub fn handle_key(
         K::Char('p') => handle.send(crate::player::engine::PlayerCommand::Prev),
         K::Char('r') => handle.send(crate::player::engine::PlayerCommand::CycleRepeat),
         K::Char('s') => handle.send(crate::player::engine::PlayerCommand::ToggleShuffle),
+        K::Char('t') => {
+            use crate::player::engine::PlayerCommand::SetSleepTimer;
+            let next = match state.sleep_set {
+                None => Some(Duration::from_secs(15 * 60)),
+                Some((_, d)) if d.as_secs() <= 15 * 60 => Some(Duration::from_secs(30 * 60)),
+                Some((_, d)) if d.as_secs() <= 30 * 60 => Some(Duration::from_secs(45 * 60)),
+                Some((_, d)) if d.as_secs() <= 45 * 60 => Some(Duration::from_secs(60 * 60)),
+                _ => None,
+            };
+            handle.send(SetSleepTimer(next));
+        }
         K::Char('l') | K::Char('L') => state.source = PlayerSource::Library,
         K::Char('d') | K::Char('D') => state.source = PlayerSource::Destination,
         K::Char('+') | K::Char('=') => {

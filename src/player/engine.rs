@@ -4,11 +4,12 @@ use std::sync::{
     mpsc::{Receiver, Sender},
     Arc,
 };
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use camino::Utf8Path;
 
 use crate::player::decoder;
+use crate::player::history;
 use crate::player::queue::{Queue, RepeatMode, TrackInfo};
 
 // ── Public command / event types ──────────────────────────────────────────────
@@ -36,6 +37,8 @@ pub enum PlayerCommand {
     SeekRelative(i64),
     /// Set playback volume (0.0 = mute, 1.0 = 100%, 2.0 = 200%).
     Volume(f32),
+    /// Set or cancel the sleep timer. `None` cancels.
+    SetSleepTimer(Option<Duration>),
 }
 
 #[derive(Debug, Clone)]
@@ -58,6 +61,10 @@ pub enum PlayerEvent {
         idx: usize,
         track: TrackInfo,
     },
+    /// Sleep timer was set (Some) or cancelled (None).
+    SleepTimerSet(Option<Duration>),
+    /// Sleep timer fired — playback has been paused.
+    SleepTimerFired,
 }
 
 // ── Player state (returned by handle for TUI display) ─────────────────────────
@@ -156,6 +163,10 @@ struct Engine {
     current_done: Option<Arc<AtomicBool>>,
     /// Next track already appended to the sink for gapless transition.
     preloaded: Option<(TrackInfo, Arc<AtomicBool>)>,
+    /// Track currently being played (for history writes).
+    current_track: Option<TrackInfo>,
+    /// When set, pause playback at this instant (sleep timer).
+    sleep_until: Option<Instant>,
 }
 
 impl Engine {
@@ -172,6 +183,8 @@ impl Engine {
             paused: false,
             current_done: None,
             preloaded: None,
+            current_track: None,
+            sleep_until: None,
         }
     }
 
@@ -195,6 +208,16 @@ impl Engine {
                 let _ = self.event_tx.send(PlayerEvent::Position(pos));
             }
 
+            // Sleep timer check.
+            if let Some(deadline) = self.sleep_until {
+                if Instant::now() >= deadline {
+                    self.sleep_until = None;
+                    self.sink.pause();
+                    self.paused = true;
+                    let _ = self.event_tx.send(PlayerEvent::SleepTimerFired);
+                }
+            }
+
             // Gapless transition: current source exhausted, check notifier.
             let current_fired = self
                 .current_done
@@ -203,6 +226,8 @@ impl Engine {
                 .unwrap_or(false);
 
             if current_fired {
+                // Track completed naturally — record full duration in history.
+                self.finish_current(true);
                 let _ = self.event_tx.send(PlayerEvent::TrackEnded);
                 if let Some((next_track, next_done)) = self.preloaded.take() {
                     // Next source already in sink — just advance the queue pointer.
@@ -221,12 +246,15 @@ impl Engine {
                 }
             }
         }
+        // Engine exiting — record position of whatever was playing.
+        self.finish_current(false);
     }
 
     /// Returns `false` when the engine should exit.
     fn handle_command(&mut self, cmd: PlayerCommand) -> bool {
         match cmd {
             PlayerCommand::LoadQueue(tracks) => {
+                self.finish_current(false);
                 self.sink.stop();
                 self.current_done = None;
                 self.preloaded = None;
@@ -267,6 +295,7 @@ impl Engine {
                 self.paused = false;
             }
             PlayerCommand::Stop => {
+                self.finish_current(false);
                 self.sink.stop();
                 self.current_done = None;
                 self.preloaded = None;
@@ -315,8 +344,26 @@ impl Engine {
             PlayerCommand::Volume(v) => {
                 self.sink.set_volume(v.clamp(0.0, 2.0));
             }
+            PlayerCommand::SetSleepTimer(dur) => {
+                self.sleep_until = dur.map(|d| Instant::now() + d);
+                let _ = self.event_tx.send(PlayerEvent::SleepTimerSet(dur));
+            }
         }
         true
+    }
+
+    /// Write a history entry for the current track, then clear it.
+    fn finish_current(&mut self, completed: bool) {
+        if let Some(track) = self.current_track.take() {
+            let pos = if completed {
+                track
+                    .duration_secs
+                    .unwrap_or_else(|| self.sink.get_pos().as_secs_f64())
+            } else {
+                self.sink.get_pos().as_secs_f64()
+            };
+            history::append(&history::HistoryEntry::from_track(&track, pos));
+        }
     }
 
     fn spawn_tag_scan(&self, tracks: Vec<TrackInfo>) {
@@ -345,6 +392,8 @@ impl Engine {
         let Some(track) = self.queue.current().cloned() else {
             return;
         };
+        // Abandon whatever was playing before.
+        self.finish_current(false);
         self.sink.stop();
         self.current_done = None;
         self.preloaded = None;
@@ -359,6 +408,7 @@ impl Engine {
             Ok(done) => {
                 self.sink.play();
                 self.current_done = Some(done);
+                self.current_track = Some(track.clone());
                 self.emit_queue_updated();
                 let _ = self.event_tx.send(PlayerEvent::TrackStarted(track));
                 // Eagerly preload next track for gapless playback.

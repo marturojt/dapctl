@@ -586,6 +586,8 @@ pub struct App {
     pub player_handle: Option<PlayerHandle>,
     pub player_rx: Option<Receiver<PlayerEvent>>,
     pub scan_rx: Option<Receiver<crate::player::scanner::ScanEvent>>,
+    /// Pending resume candidate — applied when the matching track starts.
+    pub resume_candidate: Option<crate::player::history::HistoryEntry>,
 }
 
 /// A single parsed JSONL log entry for display.
@@ -658,6 +660,7 @@ impl App {
             player_handle: None,
             player_rx: None,
             scan_rx: None,
+            resume_candidate: None,
         })
     }
 
@@ -805,6 +808,12 @@ impl App {
         crate::player::scanner::spawn_scan(root, scan_tx);
         self.scan_rx = Some(scan_rx);
 
+        // Check for a resume candidate — if the last-played track is in this
+        // queue, seek to its saved position when it starts playing.
+        if let Some(resume) = crate::player::history::load_resume() {
+            self.resume_candidate = Some(resume);
+        }
+
         handle.send(crate::player::engine::PlayerCommand::LoadQueue(tracks));
     }
 
@@ -815,6 +824,30 @@ impl App {
         };
         if let Some(ref mut ps) = self.player_state {
             ps.drain_events(rx);
+        }
+
+        // Resume: once the matching track starts, seek to its saved position.
+        if let Some(ref resume) = self.resume_candidate {
+            let matches = self
+                .player_state
+                .as_ref()
+                .and_then(|ps| ps.status.current.as_ref())
+                .map(|t| t.path.as_str() == resume.path)
+                .unwrap_or(false);
+
+            if matches {
+                let pos = std::time::Duration::from_secs_f64(resume.position_secs);
+                if let Some(ref handle) = self.player_handle {
+                    handle.send(crate::player::engine::PlayerCommand::Seek(pos));
+                }
+                let m = resume.position_secs as u64 / 60;
+                let s = resume.position_secs as u64 % 60;
+                let msg = format!("resuming from {m}:{s:02}");
+                if let Some(ref mut ps) = self.player_state {
+                    ps.flash = Some(msg);
+                }
+                self.resume_candidate = None;
+            }
         }
     }
 
