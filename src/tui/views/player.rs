@@ -162,10 +162,8 @@ pub struct PlayerState {
     pub focus: PlayerFocus,
     /// `(set_at, requested_duration)` — used to compute remaining time.
     pub sleep_set: Option<(Instant, Duration)>,
-    /// Decoded cover art for the current track (halfblock-rendered each frame).
-    pub cover_image: Option<image::DynamicImage>,
-    /// Channel receiving a decoded cover image from the background loader.
-    cover_rx: Option<std::sync::mpsc::Receiver<Option<image::DynamicImage>>>,
+    /// When the current track started playing; drives the equalizer animation.
+    pub anim_start: Instant,
 }
 
 impl PlayerState {
@@ -182,8 +180,7 @@ impl PlayerState {
             library: None,
             focus: PlayerFocus::Queue,
             sleep_set: None,
-            cover_image: None,
-            cover_rx: None,
+            anim_start: Instant::now(),
         }
     }
 
@@ -192,30 +189,11 @@ impl PlayerState {
         self.focus = PlayerFocus::Library;
     }
 
-    /// Check if a background cover-load thread delivered an image this frame.
-    pub fn poll_cover(&mut self) {
-        if let Some(rx) = &self.cover_rx {
-            if let Ok(maybe_img) = rx.try_recv() {
-                self.cover_rx = None;
-                self.cover_image = maybe_img;
-            }
-        }
-    }
-
     pub fn drain_events(&mut self, rx: &Receiver<PlayerEvent>) {
-        self.poll_cover();
         while let Ok(event) = rx.try_recv() {
             match event {
                 PlayerEvent::TrackStarted(track) => {
-                    // Spawn background thread to load cover art.
-                    let path = std::path::PathBuf::from(track.path.as_str());
-                    let (tx, cover_rx) = std::sync::mpsc::channel();
-                    self.cover_rx = Some(cover_rx);
-                    std::thread::spawn(move || {
-                        let _ = tx.send(crate::player::art::load_cover(&path));
-                    });
-
-                    self.cover_image = None;
+                    self.anim_start = Instant::now();
                     self.status.current = Some(track);
                     self.status.position = Duration::ZERO;
                     self.status.paused = false;
@@ -239,13 +217,11 @@ impl PlayerState {
                 PlayerEvent::QueueEmpty => {
                     self.status.current = None;
                     self.status.position = Duration::ZERO;
-                    self.cover_image = None;
                 }
                 PlayerEvent::Stopped => {
                     self.status.current = None;
                     self.status.position = Duration::ZERO;
                     self.status.paused = false;
-                    self.cover_image = None;
                 }
                 PlayerEvent::DecodeError { path, err } => {
                     self.flash = Some(format!("{err}  ({path})"));
@@ -443,21 +419,19 @@ fn draw_now_playing(f: &mut Frame, area: Rect, state: &mut PlayerState, theme: &
         return;
     }
 
-    // ── Album art (left column, only when cover is ready and there's room) ──────
-    // Halfblock: 1 char cell = 2 vertical image pixels. Square art → width = height chars.
-    let art_width = inner.height.max(4);
+    // ── Equalizer animation (left column when a track is loaded and there's room) ─
+    let eq_width = inner.height.max(4);
     let min_text_width = 22u16;
-    let text_area = if state.cover_image.is_some() && inner.width >= art_width + min_text_width {
+    let text_area = if state.status.current.is_some() && inner.width >= eq_width + min_text_width {
         let split = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Length(art_width),
+                Constraint::Length(eq_width),
                 Constraint::Min(min_text_width),
             ])
             .split(inner);
-        if let Some(ref img) = state.cover_image {
-            draw_halfblock_art(f, split[0], img);
-        }
+        let t = state.anim_start.elapsed().as_secs_f64();
+        draw_equalizer(f, split[0], t, state.status.paused, theme);
         split[1]
     } else {
         inner
@@ -737,37 +711,72 @@ fn fmt_sr(hz: u32) -> String {
     }
 }
 
-/// Render a `DynamicImage` into `area` using unicode half-block characters (▀).
-/// Each terminal cell encodes two image rows: foreground = top pixel, background = bottom pixel.
-/// Works on every terminal that supports 24-bit (truecolor) ANSI; gracefully degrades otherwise.
-fn draw_halfblock_art(f: &mut Frame, area: Rect, img: &image::DynamicImage) {
-    use image::imageops::FilterType;
-    use image::GenericImageView;
-    use ratatui::style::Color;
-    use ratatui::text::Text;
-    use ratatui::widgets::Paragraph;
-
+/// Animated equalizer bars. Each bar is a sin wave with distinct frequency and phase.
+/// When `paused`, bars slowly decay toward a short flat line.
+fn draw_equalizer(f: &mut Frame, area: Rect, t: f64, paused: bool, theme: &Theme) {
     if area.width == 0 || area.height == 0 {
         return;
     }
-    let pw = area.width as u32;
-    let ph = area.height as u32 * 2; // 2 image rows per terminal row
-    let resized = img.resize_exact(pw, ph, FilterType::Lanczos3);
+
+    // Each bar: (speed_multiplier, phase_offset) — tuned for visual variety.
+    const BAR_PARAMS: &[(f64, f64)] = &[
+        (1.30, 0.00),
+        (1.75, 1.10),
+        (2.10, 2.30),
+        (1.55, 3.50),
+        (2.45, 0.80),
+        (1.20, 4.20),
+        (1.90, 5.10),
+        (2.70, 1.80),
+        (1.40, 2.90),
+        (2.20, 3.70),
+        (1.65, 0.50),
+        (2.00, 4.90),
+    ];
+
+    let n = area.width as usize;
+    let max_h = area.height as f64;
+
+    let amplitudes: Vec<f64> = (0..n)
+        .map(|i| {
+            if paused {
+                // Decay: short flat bar (≤15% height) regardless of time.
+                0.12 + 0.03 * (i as f64 * 0.7).sin()
+            } else {
+                let (speed, phase) = BAR_PARAMS[i % BAR_PARAMS.len()];
+                let v1 = (t * speed + phase).sin().abs();
+                let v2 = (t * speed * 1.6 + phase * 1.9).sin().abs() * 0.35;
+                ((v1 + v2) / 1.35).clamp(0.05, 1.0)
+            }
+        })
+        .collect();
+
+    // Render bottom-aligned bars using block-fill characters.
+    let block_chars = [" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
+    let style = Style::default().fg(if paused { theme.muted } else { theme.fg });
 
     let mut lines: Vec<Line> = Vec::with_capacity(area.height as usize);
-    for row in 0..area.height as u32 {
-        let mut spans: Vec<Span> = Vec::with_capacity(area.width as usize);
-        for col in 0..pw {
-            let top = resized.get_pixel(col, row * 2);
-            let bot_row = (row * 2 + 1).min(ph - 1);
-            let bot = resized.get_pixel(col, bot_row);
-            let fg = Color::Rgb(top[0], top[1], top[2]);
-            let bg = Color::Rgb(bot[0], bot[1], bot[2]);
-            spans.push(Span::styled("▀", Style::default().fg(fg).bg(bg)));
-        }
+    for row in 0..area.height {
+        let row_from_bottom = (area.height - 1 - row) as f64;
+        let spans: Vec<Span> = amplitudes
+            .iter()
+            .map(|&amp| {
+                let bar_h = amp * max_h;
+                let ch = if row_from_bottom + 1.0 <= bar_h {
+                    "█" // fully inside bar
+                } else if row_from_bottom < bar_h {
+                    // fractional top cell
+                    let frac = bar_h - row_from_bottom.floor();
+                    block_chars[((frac * 8.0) as usize).clamp(0, 8)]
+                } else {
+                    " "
+                };
+                Span::styled(ch, style)
+            })
+            .collect();
         lines.push(Line::from(spans));
     }
-    f.render_widget(Paragraph::new(Text::from(lines)), area);
+    f.render_widget(Paragraph::new(lines), area);
 }
 
 fn trunc(s: &str, max: usize) -> String {
