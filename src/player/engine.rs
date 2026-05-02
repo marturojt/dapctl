@@ -11,6 +11,8 @@ use crate::player::queue::{Queue, RepeatMode, TrackInfo};
 
 #[derive(Debug)]
 pub enum PlayerCommand {
+    /// Load a queue without starting playback (cursor at 0, idle state).
+    LoadQueue(Vec<TrackInfo>),
     /// Load and start playing a full queue from position 0.
     PlayQueue(Vec<TrackInfo>),
     /// Push a single track to the end of the queue.
@@ -162,24 +164,21 @@ impl Engine {
     /// Returns `false` when the engine should exit.
     fn handle_command(&mut self, cmd: PlayerCommand) -> bool {
         match cmd {
+            PlayerCommand::LoadQueue(tracks) => {
+                self.sink.stop();
+                self.queue.set(tracks.clone());
+                self.paused = false;
+                self.emit_queue_updated();
+                let _ = self.event_tx.send(PlayerEvent::Stopped);
+                self.spawn_tag_scan(tracks);
+            }
             PlayerCommand::PlayQueue(tracks) => {
                 self.sink.stop();
                 self.queue.set(tracks.clone());
                 self.paused = false;
                 self.emit_queue_updated();
                 self.play_current();
-
-                // Spawn background tag scanner so the queue display fills in
-                // progressively without blocking the audio thread.
-                let tx = self.event_tx.clone();
-                std::thread::spawn(move || {
-                    for (idx, track) in tracks.into_iter().enumerate() {
-                        let tagged = track.with_tags();
-                        if tx.send(PlayerEvent::TrackMetadata { idx, track: tagged }).is_err() {
-                            break;
-                        }
-                    }
-                });
+                self.spawn_tag_scan(tracks);
             }
             PlayerCommand::Enqueue(track) => {
                 self.queue.push(track);
@@ -239,6 +238,18 @@ impl Engine {
             }
         }
         true
+    }
+
+    fn spawn_tag_scan(&self, tracks: Vec<TrackInfo>) {
+        let tx = self.event_tx.clone();
+        std::thread::spawn(move || {
+            for (idx, track) in tracks.into_iter().enumerate() {
+                let tagged = track.with_tags();
+                if tx.send(PlayerEvent::TrackMetadata { idx, track: tagged }).is_err() {
+                    break;
+                }
+            }
+        });
     }
 
     fn emit_queue_updated(&self) {

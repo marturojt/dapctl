@@ -742,7 +742,7 @@ impl App {
         crate::player::scanner::spawn_scan(root, scan_tx);
         self.scan_rx = Some(scan_rx);
 
-        handle.send(crate::player::engine::PlayerCommand::PlayQueue(tracks));
+        handle.send(crate::player::engine::PlayerCommand::LoadQueue(tracks));
     }
 
     pub fn drain_player(&mut self) {
