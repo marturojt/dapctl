@@ -162,6 +162,10 @@ pub struct PlayerState {
     pub focus: PlayerFocus,
     /// `(set_at, requested_duration)` — used to compute remaining time.
     pub sleep_set: Option<(Instant, Duration)>,
+    /// Decoded cover art for the current track (halfblock-rendered each frame).
+    pub cover_image: Option<image::DynamicImage>,
+    /// Channel receiving a decoded cover image from the background loader.
+    cover_rx: Option<std::sync::mpsc::Receiver<Option<image::DynamicImage>>>,
 }
 
 impl PlayerState {
@@ -178,6 +182,8 @@ impl PlayerState {
             library: None,
             focus: PlayerFocus::Queue,
             sleep_set: None,
+            cover_image: None,
+            cover_rx: None,
         }
     }
 
@@ -186,10 +192,30 @@ impl PlayerState {
         self.focus = PlayerFocus::Library;
     }
 
+    /// Check if a background cover-load thread delivered an image this frame.
+    pub fn poll_cover(&mut self) {
+        if let Some(rx) = &self.cover_rx {
+            if let Ok(maybe_img) = rx.try_recv() {
+                self.cover_rx = None;
+                self.cover_image = maybe_img;
+            }
+        }
+    }
+
     pub fn drain_events(&mut self, rx: &Receiver<PlayerEvent>) {
+        self.poll_cover();
         while let Ok(event) = rx.try_recv() {
             match event {
                 PlayerEvent::TrackStarted(track) => {
+                    // Spawn background thread to load cover art.
+                    let path = std::path::PathBuf::from(track.path.as_str());
+                    let (tx, cover_rx) = std::sync::mpsc::channel();
+                    self.cover_rx = Some(cover_rx);
+                    std::thread::spawn(move || {
+                        let _ = tx.send(crate::player::art::load_cover(&path));
+                    });
+
+                    self.cover_image = None;
                     self.status.current = Some(track);
                     self.status.position = Duration::ZERO;
                     self.status.paused = false;
@@ -213,11 +239,13 @@ impl PlayerState {
                 PlayerEvent::QueueEmpty => {
                     self.status.current = None;
                     self.status.position = Duration::ZERO;
+                    self.cover_image = None;
                 }
                 PlayerEvent::Stopped => {
                     self.status.current = None;
                     self.status.position = Duration::ZERO;
                     self.status.paused = false;
+                    self.cover_image = None;
                 }
                 PlayerEvent::DecodeError { path, err } => {
                     self.flash = Some(format!("{err}  ({path})"));
@@ -390,7 +418,7 @@ fn draw_library(f: &mut Frame, area: Rect, state: &mut PlayerState, theme: &Them
 
 // ── Now Playing ───────────────────────────────────────────────────────────────
 
-fn draw_now_playing(f: &mut Frame, area: Rect, state: &PlayerState, theme: &Theme) {
+fn draw_now_playing(f: &mut Frame, area: Rect, state: &mut PlayerState, theme: &Theme) {
     let source_label = state.source.label();
     let title = format!(" player  [{source_label}] ");
     let block = Block::default()
@@ -414,6 +442,26 @@ fn draw_now_playing(f: &mut Frame, area: Rect, state: &PlayerState, theme: &Them
         );
         return;
     }
+
+    // ── Album art (left column, only when cover is ready and there's room) ──────
+    // Halfblock: 1 char cell = 2 vertical image pixels. Square art → width = height chars.
+    let art_width = inner.height.max(4);
+    let min_text_width = 22u16;
+    let text_area = if state.cover_image.is_some() && inner.width >= art_width + min_text_width {
+        let split = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Length(art_width),
+                Constraint::Min(min_text_width),
+            ])
+            .split(inner);
+        if let Some(ref img) = state.cover_image {
+            draw_halfblock_art(f, split[0], img);
+        }
+        split[1]
+    } else {
+        inner
+    };
 
     let track = state.status.current.as_ref();
 
@@ -460,17 +508,17 @@ fn draw_now_playing(f: &mut Frame, area: Rect, state: &PlayerState, theme: &Them
     let text_lines: Vec<Line> = vec![title_line, artist_album_line, meta_line, Line::raw("")];
     let text_height = text_lines.len() as u16;
 
-    if inner.height < text_height + 1 {
-        f.render_widget(Paragraph::new(text_lines), inner);
+    if text_area.height < text_height + 1 {
+        f.render_widget(Paragraph::new(text_lines), text_area);
         return;
     }
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(text_height), Constraint::Min(1)])
-        .split(inner);
-    let (text_area, bottom_area) = (chunks[0], chunks[1]);
-    f.render_widget(Paragraph::new(text_lines), text_area);
+        .split(text_area);
+    let (text_lines_area, bottom_area) = (chunks[0], chunks[1]);
+    f.render_widget(Paragraph::new(text_lines), text_lines_area);
 
     // Progress gauge
     let pos = state.status.position;
@@ -687,6 +735,39 @@ fn fmt_sr(hz: u32) -> String {
     } else {
         format!("{:.1}kHz", hz as f64 / 1000.0)
     }
+}
+
+/// Render a `DynamicImage` into `area` using unicode half-block characters (▀).
+/// Each terminal cell encodes two image rows: foreground = top pixel, background = bottom pixel.
+/// Works on every terminal that supports 24-bit (truecolor) ANSI; gracefully degrades otherwise.
+fn draw_halfblock_art(f: &mut Frame, area: Rect, img: &image::DynamicImage) {
+    use image::imageops::FilterType;
+    use image::GenericImageView;
+    use ratatui::style::Color;
+    use ratatui::text::Text;
+    use ratatui::widgets::Paragraph;
+
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    let pw = area.width as u32;
+    let ph = area.height as u32 * 2; // 2 image rows per terminal row
+    let resized = img.resize_exact(pw, ph, FilterType::Lanczos3);
+
+    let mut lines: Vec<Line> = Vec::with_capacity(area.height as usize);
+    for row in 0..area.height as u32 {
+        let mut spans: Vec<Span> = Vec::with_capacity(area.width as usize);
+        for col in 0..pw {
+            let top = resized.get_pixel(col, row * 2);
+            let bot_row = (row * 2 + 1).min(ph - 1);
+            let bot = resized.get_pixel(col, bot_row);
+            let fg = Color::Rgb(top[0], top[1], top[2]);
+            let bg = Color::Rgb(bot[0], bot[1], bot[2]);
+            spans.push(Span::styled("▀", Style::default().fg(fg).bg(bg)));
+        }
+        lines.push(Line::from(spans));
+    }
+    f.render_widget(Paragraph::new(Text::from(lines)), area);
 }
 
 fn trunc(s: &str, max: usize) -> String {
