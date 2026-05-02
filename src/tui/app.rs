@@ -15,6 +15,7 @@ use crate::tui::views::player::PlayerState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
+    Home,
     Profiles,
     Diff,
     Progress,
@@ -516,6 +517,7 @@ pub struct App {
     pub profiles: Vec<(String, SyncProfile)>,
     pub scan: ScanResult,
     pub profile_idx: usize,
+    pub home_cursor: usize,
     pub should_quit: bool,
     pub flash: Option<String>,
     pub flash_ticks: u8,
@@ -589,11 +591,12 @@ impl App {
         });
 
         Ok(Self {
-            view: View::Profiles,
+            view: View::Home,
             theme: Theme::default(),
             profiles,
             scan,
             profile_idx: 0,
+            home_cursor: 0,
             should_quit: false,
             flash: None,
             flash_ticks: 0,
@@ -616,6 +619,16 @@ impl App {
 
     pub fn selected_profile(&self) -> Option<&SyncProfile> {
         self.profiles.get(self.profile_idx).map(|(_, p)| p)
+    }
+
+    // ── Home ──────────────────────────────────────────────────────────────
+
+    pub fn home_move_up(&mut self) {
+        self.home_cursor = self.home_cursor.saturating_sub(1);
+    }
+
+    pub fn home_move_down(&mut self) {
+        self.home_cursor = (self.home_cursor + 1).min(2); // 3 items
     }
 
     // ── Profiles ──────────────────────────────────────────────────────────

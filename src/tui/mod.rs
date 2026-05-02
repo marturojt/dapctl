@@ -83,6 +83,7 @@ fn event_loop(
 
 fn draw(f: &mut ratatui::Frame, app: &mut App) {
     match app.view {
+        View::Home     => views::home::render(f, app),
         View::Profiles => views::profiles::render(f, app),
         View::Diff => views::diff::render(f, app),
         View::Progress => views::progress::render(f, app),
@@ -103,10 +104,11 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
         }
 
         (KeyCode::Char('q'), _) => match app.view {
-            View::Profiles => app.should_quit = true,
+            View::Home     => app.should_quit = true,
+            View::Profiles => app.view = View::Home,
             View::Progress => {
                 let done = app.progress_state.as_ref().is_some_and(|p| p.finished);
-                if done { app.should_quit = true; }
+                if done { app.view = View::Home; }
             }
             _ => {
                 app.view = View::Profiles;
@@ -119,8 +121,36 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
         }
 
         (KeyCode::Esc, _) if app.view != View::Progress => {
+            match app.view {
+                View::Home | View::Profiles => {}
+                _ => {
+                    app.view = View::Profiles;
+                    app.confirm_sync = false;
+                }
+            }
+        }
+
+        // ── Home ─────────────────────────────────────────────────────────
+        (KeyCode::Char('j') | KeyCode::Down, _) if app.view == View::Home => {
+            app.home_move_down();
+        }
+        (KeyCode::Char('k') | KeyCode::Up, _) if app.view == View::Home => {
+            app.home_move_up();
+        }
+        (KeyCode::Enter, _) if app.view == View::Home => {
+            navigate_home(app);
+        }
+        (KeyCode::Char('s'), _) if app.view == View::Home => {
             app.view = View::Profiles;
-            app.confirm_sync = false;
+        }
+        (KeyCode::Char('m'), _) if app.view == View::Home => {
+            app.enter_player_from_profile();
+        }
+        (KeyCode::Char('l'), _) if app.view == View::Home => {
+            app.load_log();
+        }
+        (KeyCode::Char('r'), _) if app.view == View::Home => {
+            app.refresh_scan();
         }
 
         // ── Profiles ─────────────────────────────────────────────────────
@@ -468,6 +498,17 @@ fn write_new_profile(app: &App) -> anyhow::Result<String> {
          parallelism     = 4\n"
     ))?;
     Ok(name)
+}
+
+// ── Home navigation ───────────────────────────────────────────────────────────
+
+fn navigate_home(app: &mut App) {
+    match app.home_cursor {
+        0 => app.view = View::Profiles,
+        1 => app.enter_player_from_profile(),
+        2 => app.load_log(),
+        _ => {}
+    }
 }
 
 // ── Diff computation ──────────────────────────────────────────────────────────

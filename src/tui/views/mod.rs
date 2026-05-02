@@ -1,4 +1,5 @@
 pub mod diff;
+pub mod home;
 pub mod log;
 pub mod new_profile;
 pub mod placeholder;
