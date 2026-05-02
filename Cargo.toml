@@ -39,6 +39,7 @@ time                = { version = "0.3", features = ["serde", "formatting", "mac
 sysinfo             = "0.32"
 lofty               = "0.22"
 rodio               = { version = "0.19", default-features = false, features = ["symphonia-all"] }
+rusqlite            = { version = "0.31", features = ["bundled"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }

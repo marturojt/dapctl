@@ -9,8 +9,18 @@ pub struct TrackInfo {
     pub title: String,
     /// Artist from tags, if available.
     pub artist: Option<String>,
+    /// Album artist from tags (used for grouping in library view).
+    pub album_artist: Option<String>,
     /// Album from tags, if available.
     pub album: Option<String>,
+    /// Track number within the album.
+    pub track_number: Option<u32>,
+    /// Disc number for multi-disc albums.
+    pub disc_number: Option<u32>,
+    /// Release year.
+    pub year: Option<u32>,
+    /// Genre.
+    pub genre: Option<String>,
     /// Duration in seconds, if known.
     pub duration_secs: Option<f64>,
     // HiFi properties populated by `with_tags()`
@@ -30,7 +40,12 @@ impl TrackInfo {
             path,
             title,
             artist: None,
+            album_artist: None,
             album: None,
+            track_number: None,
+            disc_number: None,
+            year: None,
+            genre: None,
             duration_secs: None,
             sample_rate_hz: None,
             bit_depth: None,
@@ -48,6 +63,9 @@ impl TrackInfo {
             if let Some(a) = tag.artist() {
                 self.artist = Some(a.into_owned());
             }
+            if let Some(aa) = tag.get_string(&lofty::tag::ItemKey::AlbumArtist) {
+                self.album_artist = Some(aa.to_owned());
+            }
             if let Some(al) = tag.album() {
                 self.album = Some(al.into_owned());
             }
@@ -56,6 +74,12 @@ impl TrackInfo {
                 if !t.is_empty() {
                     self.title = t;
                 }
+            }
+            self.track_number = tag.track();
+            self.disc_number  = tag.disk();
+            self.year         = tag.year();
+            if let Some(g) = tag.genre() {
+                self.genre = Some(g.into_owned());
             }
         }
 

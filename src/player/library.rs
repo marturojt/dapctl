@@ -34,13 +34,13 @@ impl LibraryIndex {
         Self { artists: Vec::new() }
     }
 
-    /// Build from a flat track list grouped by path structure.
-    /// Root is stripped so grandparent = artist, parent = album.
+    /// Build from a flat track list.
+    /// Groups by `album_artist` (falling back to `artist`, then path structure).
     pub fn from_tracks(tracks: Vec<TrackInfo>, root: &Utf8Path) -> Self {
         let mut tree: BTreeMap<String, BTreeMap<String, Vec<TrackInfo>>> = BTreeMap::new();
         for track in tracks {
-            let artist = derive_artist(&track.path, root);
-            let album  = derive_album(&track.path, root);
+            let artist = group_artist(&track, root);
+            let album  = group_album(&track, root);
             tree.entry(artist).or_default().entry(album).or_default().push(track);
         }
         let artists = tree
@@ -103,7 +103,22 @@ impl LibraryIndex {
     }
 }
 
-// ── Path helpers ──────────────────────────────────────────────────────────────
+// ── Grouping helpers ──────────────────────────────────────────────────────────
+
+fn group_artist(track: &TrackInfo, root: &Utf8Path) -> String {
+    track.album_artist.as_deref()
+        .or(track.artist.as_deref())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_owned())
+        .unwrap_or_else(|| path_artist(&track.path, root))
+}
+
+fn group_album(track: &TrackInfo, root: &Utf8Path) -> String {
+    track.album.as_deref()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_owned())
+        .unwrap_or_else(|| path_album(&track.path, root))
+}
 
 fn rel_components<'a>(path: &'a Utf8Path, root: &Utf8Path) -> Vec<&'a str> {
     path.strip_prefix(root)
@@ -113,20 +128,12 @@ fn rel_components<'a>(path: &'a Utf8Path, root: &Utf8Path) -> Vec<&'a str> {
         .collect()
 }
 
-fn derive_artist(path: &Utf8Path, root: &Utf8Path) -> String {
+fn path_artist(path: &Utf8Path, root: &Utf8Path) -> String {
     let c = rel_components(path, root);
-    if c.len() >= 2 {
-        c[0].to_owned()
-    } else {
-        "Unknown Artist".to_owned()
-    }
+    if c.len() >= 2 { c[0].to_owned() } else { "Unknown Artist".to_owned() }
 }
 
-fn derive_album(path: &Utf8Path, root: &Utf8Path) -> String {
+fn path_album(path: &Utf8Path, root: &Utf8Path) -> String {
     let c = rel_components(path, root);
-    if c.len() >= 3 {
-        c[1].to_owned()
-    } else {
-        "Unknown Album".to_owned()
-    }
+    if c.len() >= 3 { c[1].to_owned() } else { "Unknown Album".to_owned() }
 }

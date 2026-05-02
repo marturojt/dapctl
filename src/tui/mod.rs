@@ -43,9 +43,10 @@ fn event_loop(
     app: &mut App,
 ) -> anyhow::Result<()> {
     loop {
-        // Drain progress and player events before drawing.
+        // Drain progress, player, and library scan events before drawing.
         app.drain_progress();
         app.drain_player();
+        app.drain_scan();
 
         terminal.draw(|f| draw(f, app))?;
 

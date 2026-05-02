@@ -542,6 +542,7 @@ pub struct App {
     pub player_state: Option<PlayerState>,
     pub player_handle: Option<PlayerHandle>,
     pub player_rx: Option<Receiver<PlayerEvent>>,
+    pub scan_rx: Option<Receiver<crate::player::scanner::ScanEvent>>,
 }
 
 /// A single parsed JSONL log entry for display.
@@ -609,6 +610,7 @@ impl App {
             player_state: None,
             player_handle: None,
             player_rx: None,
+            scan_rx: None,
         })
     }
 
@@ -724,12 +726,21 @@ impl App {
             return;
         }
 
-        // Build library index from path structure (fast, no tag IO).
+        // Build a quick path-based index immediately so the library pane is
+        // populated while the tag scanner runs in the background.
         let root = camino::Utf8PathBuf::from(&src);
         let index = crate::player::library::LibraryIndex::from_tracks(tracks.clone(), &root);
         if let Some(ref mut ps) = self.player_state {
             ps.set_library(index);
+            if let Some(ref mut lib) = ps.library {
+                lib.scanning = true;
+            }
         }
+
+        // Spawn the SQLite tag scanner; it will send Done(index) when ready.
+        let (scan_tx, scan_rx) = std::sync::mpsc::channel();
+        crate::player::scanner::spawn_scan(root, scan_tx);
+        self.scan_rx = Some(scan_rx);
 
         handle.send(crate::player::engine::PlayerCommand::PlayQueue(tracks));
     }
@@ -741,6 +752,51 @@ impl App {
         };
         if let Some(ref mut ps) = self.player_state {
             ps.drain_events(rx);
+        }
+    }
+
+    pub fn drain_scan(&mut self) {
+        use crate::player::scanner::ScanEvent;
+        use crate::tui::views::player::LibraryState;
+        loop {
+            let event = match self.scan_rx.as_ref() {
+                Some(rx) => match rx.try_recv() {
+                    Ok(e) => e,
+                    Err(_) => break,
+                },
+                None => break,
+            };
+            match event {
+                ScanEvent::Progress { done, total } => {
+                    if let Some(ref mut ps) = self.player_state {
+                        if let Some(ref mut lib) = ps.library {
+                            lib.scan_done = done;
+                            lib.scan_total = total;
+                        }
+                    }
+                }
+                ScanEvent::Done(index) => {
+                    if let Some(ref mut ps) = self.player_state {
+                        let focused = ps.focus;
+                        let mut new_lib = LibraryState::new(index);
+                        new_lib.scanning = false;
+                        ps.library = Some(new_lib);
+                        ps.focus = focused;
+                    }
+                    self.scan_rx = None;
+                    break;
+                }
+                ScanEvent::Error(e) => {
+                    self.set_flash(format!("library scan error: {e}"));
+                    if let Some(ref mut ps) = self.player_state {
+                        if let Some(ref mut lib) = ps.library {
+                            lib.scanning = false;
+                        }
+                    }
+                    self.scan_rx = None;
+                    break;
+                }
+            }
         }
     }
 

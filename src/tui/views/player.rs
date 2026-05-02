@@ -39,6 +39,9 @@ pub struct LibraryState {
     pub list_state: ListState,
     pub search_active: bool,
     pub search_input: tui_input::Input,
+    pub scanning: bool,
+    pub scan_done: usize,
+    pub scan_total: usize,
 }
 
 impl LibraryState {
@@ -50,7 +53,18 @@ impl LibraryState {
         if !flat.is_empty() {
             list_state.select(Some(0));
         }
-        Self { index, expanded, flat, cursor: 0, list_state, search_active: false, search_input: tui_input::Input::default() }
+        Self {
+            index,
+            expanded,
+            flat,
+            cursor: 0,
+            list_state,
+            search_active: false,
+            search_input: tui_input::Input::default(),
+            scanning: false,
+            scan_done: 0,
+            scan_total: 0,
+        }
     }
 
     pub fn rebuild_flat(&mut self) {
@@ -263,6 +277,12 @@ fn draw_library(f: &mut Frame, area: Rect, state: &mut PlayerState, theme: &Them
     let n_artists = lib.index.artists.len();
     let block_title = if lib.search_active {
         format!(" / {}_ ", lib.search_input.value())
+    } else if lib.scanning {
+        if lib.scan_total > 0 {
+            format!(" library  ({}/{} scanning...) ", lib.scan_done, lib.scan_total)
+        } else {
+            " library  (scanning...) ".to_owned()
+        }
     } else if n_artists > 0 {
         format!(" library  ({n_artists}) ")
     } else {
