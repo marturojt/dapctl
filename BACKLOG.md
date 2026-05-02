@@ -174,19 +174,24 @@ See CHANGELOG [0.3.0] for the full list. Audit and cover fetch deferred to v0.4.
 
 ### Player Tier 2
 
-- [ ] Album art in Now Playing — kitty/sixel/halfblock via `ratatui-image`.
-      Source: `lofty::Picture` (embedded) or `folder.jpg`. Fallback ASCII.
+- [x] Play history + resume position — append-only JSONL in data dir.
+      `player::history`, `finish_current()` in engine, resume seek on open.
+- [x] Sleep timer — `Instant` deadline in engine loop. `t` key cycles
+      off/15/30/45/60 min; `SleepTimerFired` pauses and flashes.
+- [x] Equalizer animation in now-playing — sin-wave bars (▁▂▃▄▅▆▇█),
+      collapses to muted flat when paused. Replaced album art approach.
+      Note: album art via `ratatui-image` deferred — version incompatible
+      with ratatui 0.29; revisit when upgrading ratatui.
 - [ ] Synced lyrics — parse `.lrc` alongside audio, scroll by timestamp.
-- [ ] Play history + resume position — append-only JSONL in data dir.
-- [ ] Sleep timer — `Instant` deadline in engine loop.
 
-### Audit
+### Audit  ·  *done*
 
-- [ ] `audit::scanner` — walk library with `lofty`, group by album folder.
-- [ ] Detect: missing tags (artist/album/title/track#/year), no cover
+- [x] `audit::scanner` — walk library with `lofty`, group by album folder.
+- [x] Detect: missing tags (artist/album/title/track#/year), no cover
       (embedded or folder.jpg), format mix, track number gaps.
-- [ ] `audit::report` — serialisable report struct.
-- [ ] `dapctl audit <path>` — human table + `--json`. Read-only, offline.
+- [x] `audit::report` — serialisable report struct.
+- [x] `dapctl audit <path>` — human table + `--json`. Read-only, offline.
+      Severity levels: high/med/low. `--min-severity` and `--limit` flags.
 
 ### Cover fetch
 
