@@ -5,6 +5,7 @@
 //! scan, diff, transfer, log) is stack-agnostic and does not depend on the
 //! presentation layer.
 
+pub mod audit;
 pub mod cli;
 pub mod config;
 pub mod dap;
