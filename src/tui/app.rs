@@ -724,6 +724,13 @@ impl App {
             return;
         }
 
+        // Build library index from path structure (fast, no tag IO).
+        let root = camino::Utf8PathBuf::from(&src);
+        let index = crate::player::library::LibraryIndex::from_tracks(tracks.clone(), &root);
+        if let Some(ref mut ps) = self.player_state {
+            ps.set_library(index);
+        }
+
         handle.send(crate::player::engine::PlayerCommand::PlayQueue(tracks));
     }
 

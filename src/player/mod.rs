@@ -1,5 +1,6 @@
 pub mod decoder;
 pub mod engine;
+pub mod library;
 pub mod queue;
 
 pub use engine::{spawn, PlayerCommand, PlayerEvent, PlayerHandle, PlayerStatus};

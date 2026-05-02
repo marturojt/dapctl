@@ -13,6 +13,11 @@ pub struct TrackInfo {
     pub album: Option<String>,
     /// Duration in seconds, if known.
     pub duration_secs: Option<f64>,
+    // HiFi properties populated by `with_tags()`
+    pub sample_rate_hz: Option<u32>,
+    pub bit_depth: Option<u8>,
+    pub bitrate_kbps: Option<u32>,
+    pub channels: Option<u8>,
 }
 
 impl TrackInfo {
@@ -27,6 +32,10 @@ impl TrackInfo {
             artist: None,
             album: None,
             duration_secs: None,
+            sample_rate_hz: None,
+            bit_depth: None,
+            bitrate_kbps: None,
+            channels: None,
         }
     }
 
@@ -55,6 +64,10 @@ impl TrackInfo {
         if secs > 0.0 {
             self.duration_secs = Some(secs);
         }
+        self.sample_rate_hz = props.sample_rate();
+        self.bit_depth       = props.bit_depth();
+        self.bitrate_kbps    = props.audio_bitrate();
+        self.channels        = props.channels();
 
         self
     }
