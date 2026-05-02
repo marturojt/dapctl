@@ -9,11 +9,13 @@ use crate::tui::theme::Theme;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-// "dapctl" in Calvin S (box-drawing) style — 3 rows, ~29 chars wide.
+// "dapctl" in figlet standard font — 5 rows, ~31 chars wide.
 const BANNER: &[&str] = &[
-    "╔╦╗  ╔═╗  ╔═╗  ╔═╗  ╔╦╗  ╦",
-    " ║║  ╠═╣  ╠═╝  ║    ║    ║",
-    "═╩╝  ╩ ╩  ╩    ╚═╝   ╩   ╚═╝",
+    "     _                  _   _ ",
+    "  __| | __ _ _ __   ___| |_| |",
+    " / _` |/ _` | '_ \\ / __| __| |",
+    "| (_| | (_| | |_) | (__| |_| |",
+    " \\__,_|\\__,_| .__/ \\___|\\__|_|",
 ];
 
 const MENU: &[(&str, &str)] = &[
