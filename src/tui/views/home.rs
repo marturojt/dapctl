@@ -9,7 +9,13 @@ use crate::tui::theme::Theme;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-// Three menu entries — index matches app.home_cursor.
+// "dapctl" in Calvin S (box-drawing) style — 3 rows, ~29 chars wide.
+const BANNER: &[&str] = &[
+    "╔╦╗  ╔═╗  ╔═╗  ╔═╗  ╔╦╗  ╦",
+    " ║║  ╠═╣  ╠═╝  ║    ║    ║",
+    "═╩╝  ╩ ╩  ╩    ╚═╝   ╩   ╚═╝",
+];
+
 const MENU: &[(&str, &str)] = &[
     ("sync & profiles", "manage and run sync"),
     ("player",          "browse & play your library"),
@@ -47,32 +53,39 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
     let [
         _b1,
-        tagline_area,
+        banner_area,
         _b2,
-        sep1_area,
+        tagline_area,
         _b3,
-        menu_area,
+        sep1_area,
         _b4,
-        sep2_area,
+        menu_area,
         _b5,
+        sep2_area,
+        _b6,
         daps_area,
         _spacer,
         hints_area,
     ] = Layout::vertical([
-        Constraint::Length(1),  // blank
-        Constraint::Length(1),  // tagline
-        Constraint::Length(1),  // blank
-        Constraint::Length(1),  // separator
-        Constraint::Length(1),  // blank
-        Constraint::Length(MENU.len() as u16),
-        Constraint::Length(1),  // blank
-        Constraint::Length(1),  // separator
-        Constraint::Length(1),  // blank
-        Constraint::Length(1),  // DAP status
+        Constraint::Length(1),                    // blank
+        Constraint::Length(BANNER.len() as u16),  // banner (3 rows)
+        Constraint::Length(1),                    // blank
+        Constraint::Length(1),                    // tagline
+        Constraint::Length(1),                    // blank + separator
+        Constraint::Length(1),                    // separator
+        Constraint::Length(1),                    // blank
+        Constraint::Length(MENU.len() as u16),    // menu
+        Constraint::Length(1),                    // blank
+        Constraint::Length(1),                    // separator
+        Constraint::Length(1),                    // blank
+        Constraint::Length(1),                    // DAP status
         Constraint::Fill(1),
-        Constraint::Length(1),  // hints
+        Constraint::Length(1),                    // hints
     ])
     .areas(inner);
+
+    // ── Banner ────────────────────────────────────────────────────────────────
+    draw_banner(f, banner_area, theme);
 
     // ── Tagline ───────────────────────────────────────────────────────────────
     f.render_widget(
@@ -102,9 +115,8 @@ pub fn render(f: &mut Frame, app: &mut App) {
     // ── Connected DAPs ────────────────────────────────────────────────────────
     draw_daps(f, daps_area, app, theme);
 
-    // ── Hints ─────────────────────────────────────────────────────────────────
-    let flash = app.flash.clone();
-    if let Some(ref msg) = flash {
+    // ── Hints / flash ─────────────────────────────────────────────────────────
+    if let Some(ref msg) = app.flash.clone() {
         f.render_widget(
             Paragraph::new(Span::styled(
                 format!("  {msg}"),
@@ -132,10 +144,32 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
 // ── Sub-renders ───────────────────────────────────────────────────────────────
 
+fn draw_banner(f: &mut Frame, area: Rect, theme: &Theme) {
+    // Widest row length in display chars (ASCII-safe here since all chars are
+    // box-drawing and count as 1 column each).
+    let banner_w = BANNER.iter().map(|r| r.chars().count()).max().unwrap_or(0);
+    let pad = (area.width as usize).saturating_sub(banner_w) / 2;
+    let prefix = " ".repeat(pad);
+
+    let lines: Vec<Line> = BANNER
+        .iter()
+        .map(|row| {
+            Line::from(Span::styled(
+                format!("{prefix}{row}"),
+                Style::default()
+                    .fg(theme.fg)
+                    .add_modifier(Modifier::BOLD),
+            ))
+        })
+        .collect();
+
+    f.render_widget(Paragraph::new(lines), area);
+}
+
 fn draw_menu(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
     let cursor = app.home_cursor;
     let w = area.width as usize;
-    // Layout: 2 leading spaces + 3 (marker+space) + 20 (label) + 2 + description
+    // 2 margin + 3 marker + 20 label + 2 sep + description (right-aligned)
     let label_col = 2 + 3 + 20 + 2;
     let desc_w = w.saturating_sub(label_col);
 
@@ -151,9 +185,9 @@ fn draw_menu(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
                 static_desc.to_string()
             };
 
-            let marker = if sel { "▶  " } else { "   " };
-            let label_s = format!("{:<20}", label);
-            let desc_s  = if desc_w > 0 {
+            let marker   = if sel { "▶  " } else { "   " };
+            let label_s  = format!("{:<20}", label);
+            let desc_s   = if desc_w > 0 {
                 format!("{:>desc_w$}", trunc(&desc, desc_w))
             } else {
                 String::new()
@@ -193,10 +227,7 @@ fn draw_daps(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         let mut spans: Vec<Span> = vec![Span::raw("  ")];
         for (i, id) in identified.iter().enumerate() {
             if i > 0 {
-                spans.push(Span::styled(
-                    "  ·  ",
-                    Style::default().fg(theme.muted),
-                ));
+                spans.push(Span::styled("  ·  ", Style::default().fg(theme.muted)));
             }
             spans.push(Span::styled(
                 id.dap_id.clone(),
@@ -211,7 +242,12 @@ fn draw_daps(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn kb<'a>(key: &'a str, theme: &Theme) -> Span<'a> {
-    Span::styled(key, Style::default().fg(theme.fg).add_modifier(Modifier::BOLD))
+    Span::styled(
+        key,
+        Style::default()
+            .fg(theme.fg)
+            .add_modifier(Modifier::BOLD),
+    )
 }
 
 fn trunc(s: &str, max: usize) -> &str {
