@@ -144,34 +144,43 @@ workflow is microSD extraction + card reader. See README for rationale.
 - [x] `dapctl export m3u <profile> [--output PATH]` — walks source with
       same filters as sync, prefixes paths with `dap.layout.music_root`.
 
-## Milestone 3 — v0.3 TUI player + audit + cover fetch
+## Milestone 3 — v0.3 TUI player  ·  *done (released 2026-05-01)*
 
-**Philosophical scope expansion** — approved 2026-04-24. See plan §12
-for detailed architecture, crate choices, and sub-milestones.
+**Player core, gapless, library browser, HiFi display, home screen.**
+See CHANGELOG [0.3.0] for the full list. Audit and cover fetch deferred to v0.4.
 
-### 12-a · Player core  (est. 4–6 weeks)
+### Player  ·  *done*
 
-- [ ] `player::engine` — rodio::Sink management, mpsc channels for
-      `PlayerCommand` / `PlayerEvent`. Position via `Sink::get_pos()`.
-- [ ] `player::decoder` — symphonia backend via rodio feature flags;
-      handles FLAC/MP3/AAC/OGG/WAV/ALAC natively, zero ffmpeg dependency.
-- [ ] `player::queue` — playlist, queue, shuffle/repeat.
-- [ ] `tui::views::player` — 5th Ratatui view: Now Playing + barra de
-      progreso + cola. Toggle `L`/`D` alterna source library / destino.
-- [ ] Add `rodio` (symphonia-all feature) to Cargo.toml.
+- [x] `player::engine` — rodio::Sink + mpsc `PlayerCommand`/`PlayerEvent`.
+      Gapless via `TrackDoneNotifier<S>` (AtomicBool per source, eager preload).
+- [x] `player::decoder` — symphonia via rodio for PCM; ffmpeg pipe for DSD.
+- [x] `player::queue` — playlist, shuffle, repeat (Off/All/One),
+      `peek_next()` for gapless lookahead.
+- [x] `player::scanner` — SQLite-backed tag scanner with mtime_ns+size
+      invalidation; rayon-parallel `with_tags()`; platform data dir cache.
+- [x] `player::library` — tag-grouped index (album_artist → artist → path
+      fallback); `LibraryIndex` with flat filtered view for search.
+- [x] `tui::views::player` — three-pane layout (library · now playing+queue ·
+      hints). HiFi display (sample rate · bit depth · bitrate · channels).
+      `/` search, `Tab` focus, `L`/`D` source toggle, volume, seek.
+- [x] `tui::views::home` — landing screen, ASCII art banner, navigable menu.
+- [x] `PlayerCommand::LoadQueue` — populate queue without auto-play.
+- [x] DSD via ffmpeg pipe + diff view preview (`space` to enqueue).
+- [x] README, CHANGELOG, BACKLOG, website updated to v0.3.0.
 
-### 12-b · Player DSD + diff integration  ·  *done*
+---
 
-- [x] DSD (DSF/DFF) via ffmpeg pipe → PCM f32le 176.4 kHz stereo →
-      rodio. `decoder::DsdSource` implementa `rodio::Source`. ⚠ mensaje
-      claro cuando ffmpeg no está en PATH; auto-avanza al siguiente track.
-- [x] `space` en diff view → encola track de la fuente en el player →
-      abre vista player. Maneja transcoded entries (usa extensión original).
-      Orphans muestran mensaje informativo. Flujo "escucha antes de sync".
-- [x] Hi-res passthrough best-effort vía cpal/WASAPI; exclusive mode
-      documentado como limitación hasta v1.0.
+## Milestone 4 — v0.4 Player Tier 2 + Audit + Cover fetch
 
-### 12-c · Audit  (est. 2 weeks)
+### Player Tier 2
+
+- [ ] Album art in Now Playing — kitty/sixel/halfblock via `ratatui-image`.
+      Source: `lofty::Picture` (embedded) or `folder.jpg`. Fallback ASCII.
+- [ ] Synced lyrics — parse `.lrc` alongside audio, scroll by timestamp.
+- [ ] Play history + resume position — append-only JSONL in data dir.
+- [ ] Sleep timer — `Instant` deadline in engine loop.
+
+### Audit
 
 - [ ] `audit::scanner` — walk library with `lofty`, group by album folder.
 - [ ] Detect: missing tags (artist/album/title/track#/year), no cover
@@ -179,21 +188,15 @@ for detailed architecture, crate choices, and sub-milestones.
 - [ ] `audit::report` — serialisable report struct.
 - [ ] `dapctl audit <path>` — human table + `--json`. Read-only, offline.
 
-### 12-d · Cover fetch  (est. 3 weeks)
+### Cover fetch
 
-- [ ] `cover::musicbrainz` — search by (artist, album) → MBID →
-      Cover Art Archive fetch. Rate: 1 req/s.
-- [ ] `cover::itunes` — iTunes Search API fallback (no key required).
-      Rate: 20 req/min.
-- [ ] Metadata cache at `$XDG_CACHE_HOME/dapctl/metadata/`, TTL 30 days.
+- [ ] `cover::musicbrainz` — (artist, album) → MBID → Cover Art Archive.
+      Rate: 1 req/s. Cache TTL 30 days in `$XDG_CACHE_HOME/dapctl/metadata/`.
+- [ ] `cover::itunes` — iTunes Search API fallback. Rate: 20 req/min.
 - [ ] Download to `<album>/folder.jpg`. Resize to ≥600×600 JPEG.
-      No tag embedding in v0.3.
-- [ ] `dapctl cover fetch <path> [--online]` — fails with clear message
-      without `--online`.
+- [ ] `dapctl cover fetch <path> [--online]` — offline by default.
 - [ ] `docs/NETWORK.md` — policy, user-agent, rate limits, opt-in.
-- [ ] README "What dapctl is not" section updated to reflect v0.3 scope.
 - [ ] Add `reqwest` (blocking) and `image` to Cargo.toml.
-- [x] `lofty` already in Cargo.toml since v0.2.
 
 ---
 

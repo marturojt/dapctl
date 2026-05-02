@@ -4,7 +4,49 @@ All notable changes to this project will be documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [SemVer](https://semver.org/).
 
-## [Unreleased] — v0.2 in progress
+## [Unreleased]
+
+---
+
+## [0.3.0] — 2026-05-01
+
+### Added
+- Home landing screen (`tui::views::home`): figlet ASCII art banner,
+  navigable menu (sync & profiles · player · log), connected DAPs status.
+  Default entry point on `dapctl` launch; `q` from sub-views returns here.
+- TUI audio player — open with `m` from the profiles screen:
+  - Three-pane layout: library browser · now playing + queue · key hints.
+  - **SQLite-backed library scanner** (`player::scanner`): tag-based grouping
+    (`album_artist` → `artist` → path fallback). Cache in platform data dir
+    keyed by mtime_ns + size; only re-reads changed files on subsequent opens.
+  - Artist → album → track hierarchy with expand/collapse (`Enter`).
+    `Tab` switches pane focus between library and queue.
+  - `/` incremental search across artist · album · title (real-time filter).
+  - **Gapless playback** via `TrackDoneNotifier<S>`: next decoder eagerly
+    appended to the rodio Sink before the current source is exhausted;
+    `Arc<AtomicBool>` fires on source end to drive a seamless queue advance.
+  - HiFi metadata display in Now Playing: sample rate · bit depth · bitrate
+    · channels populated by `lofty` on first play.
+  - Volume (`+`/`-`), seek (`←`/`→` ±30 s), next/prev (`n`/`p`),
+    shuffle (`s`), repeat cycle (`r`).
+  - Source toggle (`L`/`D`): play from source library or mounted DAP
+    destination. Paths resolved from the active sync profile.
+  - Preview from diff view: `space` on any entry enqueues and opens the
+    player without starting playback automatically.
+  - DSD (DSF/DFF) via ffmpeg pipe → PCM f32le 176.4 kHz (requires ffmpeg
+    in PATH; clear error message and auto-advance when absent).
+- `PlayerCommand::LoadQueue` — populates queue without auto-starting
+  playback (complements existing `PlayQueue`).
+- `Queue::peek_next()` — returns the track `advance()` would play next
+  without mutating state; used by gapless preload.
+
+### Changed
+- Default TUI entry point changed from `profiles` view to `home` view.
+  `q` from profiles returns to home; `q` from home exits.
+
+---
+
+## [0.2.0] — 2026-04-28
 
 ### Added
 - `Verify::Checksum` mode: streaming blake3 hash (1 MiB buffer) computed
@@ -156,4 +198,6 @@ Versioning: [SemVer](https://semver.org/).
 - Mirror mode: orphan detection and deletion confirmed.
 - Re-run idempotency: 2,108 unchanged, 0 copied, 0 failed.
 
+[0.3.0]: https://github.com/marturojt/dapctl/releases/tag/v0.3.0
+[0.2.0]: https://github.com/marturojt/dapctl/releases/tag/v0.2.0
 [0.1.0]: https://github.com/marturojt/dapctl/releases/tag/v0.1.0

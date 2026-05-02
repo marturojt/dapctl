@@ -10,12 +10,18 @@ limits, supported codecs, cache folders to exclude.
 
 ## Status
 
-**v0.2.0 released.** Real-world validated: 2,108 FLAC · 75 GB · HiBy R4
-microSD · mirror + additive modes.
+**v0.3.0 released.**
 
-v0.2 adds: blake3 checksum verification, tag-based filters (artist ·
+v0.3 adds: TUI audio player with SQLite-backed library browser
+(artist → album → track, tag-grouped), gapless playback, HiFi metadata
+display (sample rate · bit depth · bitrate · channels), `/` incremental
+search, source toggle library ↔ DAP destination, home landing screen.
+
+v0.2 added: blake3 checksum verification, tag-based filters (artist ·
 genre · sample rate · bit depth), ffmpeg transcode pipeline with a
-blake3-keyed cache, and `dapctl export m3u`.
+blake3-keyed cache, `dapctl export m3u`.
+
+v0.1 was real-world validated: 2,108 FLAC · 75 GB · HiBy R4 microSD.
 
 See [`BACKLOG.md`](BACKLOG.md) and [`CHANGELOG.md`](CHANGELOG.md).
 
@@ -54,7 +60,7 @@ scripts, packaged as an honest, auditable, portable tool.
 ## Commands
 
 ```
-dapctl                          # launch TUI
+dapctl                          # launch TUI (home screen)
 dapctl sync <profile>           # sync to DAP (dry-run by default in mirror mode)
 dapctl diff <profile>           # preview without touching the destination
 dapctl diff <profile> --json    # machine-readable plan
@@ -67,6 +73,14 @@ dapctl log                      # tail the structured log
 dapctl export m3u <profile>     # generate M3U playlist for the DAP
 dapctl export m3u <profile> -o playlist.m3u
 ```
+
+Inside the TUI, press `m` from the profiles screen to open the audio
+player. The player browses your source library, plays directly from
+there or from a mounted DAP, and supports DSD via ffmpeg.
+
+**Key bindings (player):** `space` play/pause · `n`/`p` next/prev ·
+`j`/`k` navigate · `Enter` expand/play · `Tab` switch pane ·
+`/` search · `←`/`→` seek · `+`/`-` volume · `L`/`D` toggle source
 
 Every TUI action has a non-interactive CLI equivalent (`--yes`,
 `--dry-run`, `-v`) so it composes with scripts and cron.
@@ -105,12 +119,15 @@ valuable contribution is a **DAP profile** for a device you own.
 
 ## What `dapctl` is not
 
-- Not a music player.
+- **Not a library manager.** The built-in player lets you browse and
+  listen to your source library or verify what landed on the DAP after
+  a sync. Your DAP remains your primary listening device.
 - Not a tag editor (that's Picard or beets).
-- Not a generic library manager.
 - Not a bidirectional sync tool (that's Syncthing).
 - No GUI. Ever.
-- No telemetry. No network calls unless you configure an SSH source.
+- **Offline by default.** No telemetry. No network calls unless you
+  configure an SSH source (v1.0) or pass `--online` to future
+  `audit`/`cover` subcommands.
 
 ## License
 
