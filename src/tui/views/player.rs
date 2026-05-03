@@ -149,6 +149,14 @@ impl PlayerSource {
     }
 }
 
+// ── Right pane selector ───────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RightPane {
+    Queue,
+    Lyrics,
+}
+
 // ── Player view state ─────────────────────────────────────────────────────────
 
 pub struct PlayerState {
@@ -164,6 +172,10 @@ pub struct PlayerState {
     pub sleep_set: Option<(Instant, Duration)>,
     /// When the current track started playing; drives the equalizer animation.
     pub anim_start: Instant,
+    /// Parsed lyrics for the current track, if a `.lrc` file was found.
+    pub lyrics: Option<crate::player::lyrics::Lyrics>,
+    /// Which pane occupies the right column: queue or lyrics.
+    pub right_pane: RightPane,
 }
 
 impl PlayerState {
@@ -181,6 +193,8 @@ impl PlayerState {
             focus: PlayerFocus::Queue,
             sleep_set: None,
             anim_start: Instant::now(),
+            lyrics: None,
+            right_pane: RightPane::Queue,
         }
     }
 
@@ -194,6 +208,9 @@ impl PlayerState {
             match event {
                 PlayerEvent::TrackStarted(track) => {
                     self.anim_start = Instant::now();
+                    // Load .lrc alongside the audio file (best-effort).
+                    let lrc_path = std::path::Path::new(track.path.as_str());
+                    self.lyrics = crate::player::lyrics::load(lrc_path);
                     self.status.current = Some(track);
                     self.status.position = Duration::ZERO;
                     self.status.paused = false;
@@ -279,7 +296,7 @@ pub fn draw(f: &mut Frame, area: Rect, state: &mut PlayerState, theme: &Theme) {
 
         draw_library(f, horiz[0], state, theme);
         draw_now_playing(f, right[0], state, theme);
-        draw_queue(f, right[1], state, theme);
+        draw_right_pane(f, right[1], state, theme);
     } else {
         // 2-pane: [now_playing (8)] / [queue (fills)]
         let chunks = Layout::default()
@@ -287,7 +304,7 @@ pub fn draw(f: &mut Frame, area: Rect, state: &mut PlayerState, theme: &Theme) {
             .constraints([Constraint::Length(8), Constraint::Min(4)])
             .split(main_area);
         draw_now_playing(f, chunks[0], state, theme);
-        draw_queue(f, chunks[1], state, theme);
+        draw_right_pane(f, chunks[1], state, theme);
     }
 
     draw_hints(f, hints_area, state, theme);
@@ -610,6 +627,74 @@ fn draw_queue(f: &mut Frame, area: Rect, state: &mut PlayerState, theme: &Theme)
     f.render_stateful_widget(list, area, &mut state.queue_list_state);
 }
 
+// ── Right pane dispatcher ────────────────────────────────────────────────────
+
+fn draw_right_pane(f: &mut Frame, area: Rect, state: &mut PlayerState, theme: &Theme) {
+    match state.right_pane {
+        RightPane::Queue => draw_queue(f, area, state, theme),
+        RightPane::Lyrics => draw_lyrics(f, area, state, theme),
+    }
+}
+
+// ── Lyrics pane ───────────────────────────────────────────────────────────────
+
+fn draw_lyrics(f: &mut Frame, area: Rect, state: &PlayerState, theme: &Theme) {
+    let n_lines = state.lyrics.as_ref().map(|l| l.lines.len()).unwrap_or(0);
+    let title = if n_lines > 0 {
+        format!(" lyrics  ({n_lines} lines) ")
+    } else {
+        " lyrics ".to_owned()
+    };
+
+    let block = Block::default()
+        .title(title.as_str())
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.muted));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let Some(ref lyrics) = state.lyrics else {
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                "  — no .lrc found —",
+                Style::default().fg(theme.muted),
+            )),
+            inner,
+        );
+        return;
+    };
+
+    let pos_secs = state.status.position.as_secs_f64();
+    let active_idx = lyrics.current_idx(pos_secs);
+    let h = inner.height as usize;
+    let n = lyrics.lines.len();
+
+    // Keep active line ~1/3 from top.
+    let target_row = h / 3;
+    let scroll = match active_idx {
+        Some(idx) => idx.saturating_sub(target_row),
+        None => 0,
+    };
+
+    let rendered_lines: Vec<Line> = (scroll..scroll + h)
+        .map(|i| {
+            if i >= n {
+                Line::raw("")
+            } else {
+                let is_active = active_idx == Some(i);
+                let style = if is_active {
+                    Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(theme.muted)
+                };
+                Line::from(Span::styled(format!("  {}", lyrics.lines[i].text), style))
+            }
+        })
+        .collect();
+
+    f.render_widget(Paragraph::new(rendered_lines), inner);
+}
+
 // ── Hints ─────────────────────────────────────────────────────────────────────
 
 fn draw_hints(f: &mut Frame, area: Rect, state: &PlayerState, theme: &Theme) {
@@ -617,16 +702,27 @@ fn draw_hints(f: &mut Frame, area: Rect, state: &PlayerState, theme: &Theme) {
     let shuffle_label = if state.status.shuffle { "on" } else { "off" };
     let sleep_label = fmt_sleep_label(state);
 
+    let has_lyrics = state.lyrics.is_some();
+    let pane_label = match state.right_pane {
+        RightPane::Queue => "lyrics",
+        RightPane::Lyrics => "queue",
+    };
+    let i_hint = if has_lyrics {
+        format!(" · i {pane_label}")
+    } else {
+        String::new()
+    };
+
     let (line1, line2) = if state.library.is_some() {
         match state.focus {
             PlayerFocus::Library => (
                 "  space pause · n/p next/prev · ←/→ seek · +/- vol · Tab→queue · q back",
-                &*format!("  j/k nav · Enter expand/play · / search · t sleep:{sleep_label}"),
+                &*format!("  j/k nav · Enter expand/play · / search · t sleep:{sleep_label}{i_hint}"),
             ),
             PlayerFocus::Queue => (
                 "  space pause · n/p next/prev · ←/→ seek · +/- vol · Tab→library · q back",
                 &*format!(
-                    "  j/k scroll · Enter jump · r repeat:{repeat_label} · s shuffle:{shuffle_label} · t sleep:{sleep_label}"
+                    "  j/k scroll · Enter jump · r repeat:{repeat_label} · s shuffle:{shuffle_label} · t sleep:{sleep_label}{i_hint}"
                 ),
             ),
         }
@@ -634,7 +730,7 @@ fn draw_hints(f: &mut Frame, area: Rect, state: &PlayerState, theme: &Theme) {
         (
             "  space play/pause · n/p next/prev · ←/→ seek ±30s · +/- vol · q back",
             &*format!(
-                "  j/k scroll · Enter jump · r repeat:{repeat_label} · s shuffle:{shuffle_label} · t sleep:{sleep_label} · L/D source"
+                "  j/k scroll · Enter jump · r repeat:{repeat_label} · s shuffle:{shuffle_label} · t sleep:{sleep_label} · L/D source{i_hint}"
             ),
         )
     };
@@ -854,6 +950,14 @@ pub fn handle_key(
         }
         K::Left => handle.send(crate::player::engine::PlayerCommand::SeekRelative(-30)),
         K::Right => handle.send(crate::player::engine::PlayerCommand::SeekRelative(30)),
+
+        // Toggle queue / lyrics in the right pane
+        K::Char('i') => {
+            state.right_pane = match state.right_pane {
+                RightPane::Queue => RightPane::Lyrics,
+                RightPane::Lyrics => RightPane::Queue,
+            };
+        }
 
         // Activate library search (library must be focused)
         K::Char('/') if state.focus == PlayerFocus::Library => {

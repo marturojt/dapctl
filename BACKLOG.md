@@ -182,7 +182,9 @@ See CHANGELOG [0.3.0] for the full list. Audit and cover fetch deferred to v0.4.
       collapses to muted flat when paused. Replaced album art approach.
       Note: album art via `ratatui-image` deferred — version incompatible
       with ratatui 0.29; revisit when upgrading ratatui.
-- [ ] Synced lyrics — parse `.lrc` alongside audio, scroll by timestamp.
+- [x] Synced lyrics — parse `.lrc` alongside audio, scroll by timestamp.
+      `player::lyrics` (`from_lrc`, `current_idx`), auto-scroll ⅓ from top,
+      `i` key toggles queue/lyrics pane, hints update when lyrics present.
 
 ### Audit  ·  *done*
 
