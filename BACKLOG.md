@@ -232,7 +232,8 @@ See CHANGELOG [0.3.0] for the full list.
       ibasso-dx320, generic. CI validated via `all_builtin_profiles_parse`.
 - [ ] AcoustID duplicate detection (optional, `chromaprint`).
 - [ ] Beets query integration as filter source.
-- [ ] Cover art embed in tags (lofty write, all formats, v1.0).
+- [x] Cover art embed in tags (lofty write, all formats, v1.0).
+      `dapctl cover embed <path> [--overwrite]` — FLAC/MP3/M4A/OGG/Opus.
 - [ ] Official distribution: Homebrew core, Scoop, AUR, GH Releases.
 
 ---

@@ -23,6 +23,9 @@ const AUDIO_EXTS: &[&str] = &[
     "aif", "ape",
 ];
 
+/// Formats where lofty can write picture blocks back to disk.
+const EMBED_EXTS: &[&str] = &["flac", "mp3", "m4a", "alac", "ogg", "opus"];
+
 /// File names that count as "already has cover art".
 const COVER_NAMES: &[&str] = &[
     "folder.jpg",
@@ -48,6 +51,22 @@ pub struct FetchStats {
     pub already_have: usize,
     pub fetched: usize,
     pub not_found: usize,
+    pub errors: usize,
+}
+
+pub struct EmbedOptions {
+    pub path: PathBuf,
+    /// When true, replace existing embedded CoverFront pictures.
+    pub overwrite: bool,
+}
+
+#[derive(Default)]
+pub struct EmbedStats {
+    pub albums_scanned: usize,
+    pub files_embedded: usize,
+    pub files_skipped_has_art: usize,
+    pub files_skipped_no_folder: usize,
+    pub files_skipped_format: usize,
     pub errors: usize,
 }
 
@@ -252,6 +271,173 @@ pub fn fetch(opts: &FetchOptions, progress: impl Fn(&str)) -> Result<FetchStats>
     }
 
     Ok(stats)
+}
+
+// ── Embed entry point ────────────────────────────────────────────────────────
+
+/// For every album dir under `opts.path` that has a cover file on disk
+/// (`folder.jpg` / `cover.jpg` / …), embed it into each audio file's tags.
+///
+/// Supported formats: FLAC, MP3, M4A/ALAC, OGG Vorbis, OGG Opus.
+/// All other formats are silently skipped.  No network calls.
+pub fn embed(opts: &EmbedOptions, progress: impl Fn(&str)) -> Result<EmbedStats> {
+    use lofty::config::WriteOptions;
+    use lofty::file::AudioFile;
+    use lofty::picture::{MimeType, Picture, PictureType};
+    use lofty::prelude::TaggedFileExt;
+
+    let album_dirs = collect_album_dirs(&opts.path);
+    let mut stats = EmbedStats {
+        albums_scanned: album_dirs.len(),
+        ..Default::default()
+    };
+
+    for dir in &album_dirs {
+        // Find a cover file already on disk for this album.
+        let cover_path = COVER_NAMES
+            .iter()
+            .map(|n| dir.join(n))
+            .find(|p| p.exists());
+
+        let Some(cover_path) = cover_path else {
+            stats.files_skipped_no_folder += count_embeddable_files(dir);
+            continue;
+        };
+
+        let cover_bytes = match std::fs::read(&cover_path) {
+            Ok(b) => b,
+            Err(e) => {
+                progress(&format!("  !  {} \u{2014} read error: {e}", dir_label(dir)));
+                stats.errors += 1;
+                continue;
+            }
+        };
+
+        // Convert once per album; pass the same JPEG bytes to every track.
+        let jpeg_bytes = match to_jpeg(&cover_bytes) {
+            Ok(b) => b,
+            Err(e) => {
+                progress(&format!("  !  {} \u{2014} image error: {e}", dir_label(dir)));
+                stats.errors += 1;
+                continue;
+            }
+        };
+
+        let mut album_embedded = 0usize;
+
+        let entries = match std::fs::read_dir(dir) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+
+            if !EMBED_EXTS.contains(&ext.as_str()) {
+                if AUDIO_EXTS.contains(&ext.as_str()) {
+                    stats.files_skipped_format += 1;
+                }
+                continue;
+            }
+
+            let mut tagged = match lofty::read_from_path(&path) {
+                Ok(t) => t,
+                Err(e) => {
+                    progress(&format!("  !  {} \u{2014} {e}", path.display()));
+                    stats.errors += 1;
+                    continue;
+                }
+            };
+
+            // Avoid double-mutable-borrow: check existence first, then get the ref.
+            let has_primary = tagged.primary_tag().is_some();
+            let tag = if has_primary {
+                tagged.primary_tag_mut().unwrap()
+            } else if tagged.first_tag().is_some() {
+                tagged.first_tag_mut().unwrap()
+            } else {
+                // File has no writable tag — unusual, skip rather than risk corruption.
+                stats.files_skipped_format += 1;
+                continue;
+            };
+
+            // Check existing embedded cover.
+            let has_cover = tag
+                .pictures()
+                .iter()
+                .any(|p| p.pic_type() == PictureType::CoverFront);
+
+            if has_cover && !opts.overwrite {
+                stats.files_skipped_has_art += 1;
+                continue;
+            }
+
+            // Remove existing CoverFront pictures when overwriting.
+            if opts.overwrite {
+                let to_remove: Vec<usize> = tag
+                    .pictures()
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, p)| p.pic_type() == PictureType::CoverFront)
+                    .map(|(i, _)| i)
+                    .collect();
+                for idx in to_remove.into_iter().rev() {
+                    tag.remove_picture(idx);
+                }
+            }
+
+            tag.push_picture(Picture::new_unchecked(
+                PictureType::CoverFront,
+                Some(MimeType::Jpeg),
+                None,
+                jpeg_bytes.clone(),
+            ));
+
+            match tagged.save_to_path(&path, WriteOptions::default()) {
+                Ok(()) => {
+                    stats.files_embedded += 1;
+                    album_embedded += 1;
+                }
+                Err(e) => {
+                    progress(&format!("  !  {} \u{2014} write error: {e}", path.display()));
+                    stats.errors += 1;
+                }
+            }
+        }
+
+        if album_embedded > 0 {
+            progress(&format!(
+                "  \u{2713}  {} ({} file{} embedded)",
+                dir_label(dir),
+                album_embedded,
+                if album_embedded == 1 { "" } else { "s" },
+            ));
+        }
+    }
+
+    Ok(stats)
+}
+
+fn count_embeddable_files(dir: &Path) -> usize {
+    std::fs::read_dir(dir)
+        .map(|entries| {
+            entries
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    e.path()
+                        .extension()
+                        .and_then(|ex| ex.to_str())
+                        .map(|ex| EMBED_EXTS.contains(&ex.to_lowercase().as_str()))
+                        .unwrap_or(false)
+                })
+                .count()
+        })
+        .unwrap_or(0)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
