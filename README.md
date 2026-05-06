@@ -10,9 +10,18 @@ limits, supported codecs, cache folders to exclude.
 
 ## Status
 
-**v0.3.0 released.**
+**v0.4.0 released.**
 
-v0.3 adds: TUI audio player with SQLite-backed library browser
+v0.4 adds: synced lyrics (`.lrc` auto-scroll, `i` toggle), play
+history + resume position, sleep timer, equalizer animation, library
+normalisation (case + diacritics — "Rosalía" and "Rosalia" merge),
+`dapctl audit` (offline library health: missing tags, absent covers,
+format mix, track-number gaps), `dapctl cover fetch` (MusicBrainz →
+Cover Art Archive → iTunes, opt-in `--online`, 30-day cache), TUI UX
+improvements (diff tab row, wizard step dots, mode badges, last-sync
+indicator).
+
+v0.3 added: TUI audio player with SQLite-backed library browser
 (artist → album → track, tag-grouped), gapless playback, HiFi metadata
 display (sample rate · bit depth · bitrate · channels), `/` incremental
 search, source toggle library ↔ DAP destination, home landing screen.
@@ -72,6 +81,9 @@ dapctl profile check <file>     # validate a sync profile TOML
 dapctl log                      # tail the structured log
 dapctl export m3u <profile>     # generate M3U playlist for the DAP
 dapctl export m3u <profile> -o playlist.m3u
+dapctl audit <path>             # offline library health report (tags, covers, gaps)
+dapctl audit <path> --json
+dapctl cover fetch <path> --online   # download missing folder.jpg (opt-in)
 ```
 
 Inside the TUI, press `m` from the profiles screen to open the audio
@@ -80,7 +92,8 @@ there or from a mounted DAP, and supports DSD via ffmpeg.
 
 **Key bindings (player):** `space` play/pause · `n`/`p` next/prev ·
 `j`/`k` navigate · `Enter` expand/play · `Tab` switch pane ·
-`/` search · `←`/`→` seek · `+`/`-` volume · `L`/`D` toggle source
+`/` search · `←`/`→` seek · `+`/`-` volume · `L`/`D` toggle source ·
+`i` toggle lyrics/queue · `r` cycle repeat · `s` shuffle · `t` sleep timer
 
 Every TUI action has a non-interactive CLI equivalent (`--yes`,
 `--dry-run`, `-v`) so it composes with scripts and cron.
@@ -125,9 +138,9 @@ valuable contribution is a **DAP profile** for a device you own.
 - Not a tag editor (that's Picard or beets).
 - Not a bidirectional sync tool (that's Syncthing).
 - No GUI. Ever.
-- **Offline by default.** No telemetry. No network calls unless you
-  configure an SSH source (v1.0) or pass `--online` to future
-  `audit`/`cover` subcommands.
+- **Offline by default.** No telemetry. `dapctl cover fetch` and
+  `dapctl audit` make network calls only when you pass `--online`
+  explicitly. SSH source support is planned for v1.0.
 
 ## License
 

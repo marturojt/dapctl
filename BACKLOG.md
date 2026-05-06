@@ -117,8 +117,8 @@ workflow is microSD extraction + card reader. See README for rationale.
 
 ### Release engineering
 
-- [x] `release.yml`: Linux musl x86_64+ARM64 via `cargo-zigbuild`,
-      macOS universal (lipo), Windows MSVC. Draft release + SHA256SUMS.
+- [x] `release.yml`: Linux glibc x86_64+ARM64 (native runners),
+      macOS universal (lipo x86_64+aarch64), Windows MSVC. Draft release + SHA256SUMS.
 - [x] Homebrew tap: `github.com/marturojt/homebrew-tap` — `brew tap marturojt/tap && brew install dapctl`.
 - [ ] Scoop bucket skeleton.
 - [ ] AUR `PKGBUILD` (git + bin variants).
@@ -147,7 +147,7 @@ workflow is microSD extraction + card reader. See README for rationale.
 ## Milestone 3 — v0.3 TUI player  ·  *done (released 2026-05-01)*
 
 **Player core, gapless, library browser, HiFi display, home screen.**
-See CHANGELOG [0.3.0] for the full list. Audit and cover fetch deferred to v0.4.
+See CHANGELOG [0.3.0] for the full list.
 
 ### Player  ·  *done*
 
@@ -167,6 +167,8 @@ See CHANGELOG [0.3.0] for the full list. Audit and cover fetch deferred to v0.4.
 - [x] `PlayerCommand::LoadQueue` — populate queue without auto-play.
 - [x] DSD via ffmpeg pipe + diff view preview (`space` to enqueue).
 - [x] README, CHANGELOG, BACKLOG, website updated to v0.3.0.
+- [x] `new_profile` wizard expanded to 5 steps (name → source → destination
+      with file browser → mode → summary).
 
 ---
 
@@ -185,6 +187,15 @@ See CHANGELOG [0.3.0] for the full list. Audit and cover fetch deferred to v0.4.
 - [x] Synced lyrics — parse `.lrc` alongside audio, scroll by timestamp.
       `player::lyrics` (`from_lrc`, `current_idx`), auto-scroll ⅓ from top,
       `i` key toggles queue/lyrics pane, hints update when lyrics present.
+- [x] Library normalisation — `normalize_key()` in `player::library`:
+      case-insensitive + diacritic-insensitive grouping (à/á/â→a, ñ→n, í→i…).
+      Display name = first value seen; BTreeMap key = normalised form.
+- [x] TUI UX improvements — diff filter tab row with per-tab counts;
+      new_profile 5-dot step indicator; profiles mode badge coloured
+      (mirror=warn, additive=muted); last-sync `✓ Xh ago` indicator;
+      player HiFi line shows repeat (`↺`/`↺1`) and shuffle (`⇄`) state;
+      focused pane title bold + `▶` prefix; queue shows `(X/N)` position.
+- [x] README, CHANGELOG, BACKLOG, website updated to v0.4.0.
 
 ### Audit  ·  *done*
 
@@ -208,7 +219,7 @@ See CHANGELOG [0.3.0] for the full list. Audit and cover fetch deferred to v0.4.
 
 ---
 
-## Milestone 4 — v1.0 Community profiles & SSH
+## Milestone 5 — v1.0 Community profiles & SSH
 
 - [ ] SSH source via `russh`.
 - [ ] At least 6 DAP profiles with fixtures in CI.
