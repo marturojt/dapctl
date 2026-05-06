@@ -8,6 +8,64 @@ Versioning: [SemVer](https://semver.org/).
 
 ---
 
+## [0.4.0] — 2026-05-05
+
+### Added
+- **Synced lyrics** (`player::lyrics`): auto-detects `.lrc` alongside the
+  audio file, parses multi-timestamp LRC format, and scrolls the active line
+  to ~⅓ from the top of the pane. `i` key toggles between queue and lyrics
+  pane; hints update when lyrics are present.
+- **Play history + resume position** (`player::history`): append-only JSONL
+  log in the platform data dir. On opening a track that appears in history,
+  playback resumes from the last recorded position.
+- **Sleep timer**: `t` key cycles off → 15 → 30 → 45 → 60 min. A countdown
+  badge `⏾ M:SS` appears in the HiFi line. On expiry the engine pauses and
+  emits a flash notification.
+- **Equalizer animation** in Now Playing: animated sin-wave bars
+  (▁▂▃▄▅▆▇█ cycling through 8 phases) while playing; collapses to a muted
+  flat line when paused.
+- **`dapctl audit <path>`** — offline read-only library audit (`audit::scanner`
+  + `audit::report`):
+  - Detects missing tags (artist/album/title/track#/year), absent cover art
+    (embedded or `folder.jpg`), format mix within an album, and track-number
+    gaps.
+  - Severity levels: high/medium/low. Flags `--min-severity` and `--limit`.
+  - Human table + `--json` structured output.
+- **`dapctl cover fetch <path> [--online]`** — batch cover art downloader:
+  - Without `--online`: prints policy message and exits (code 2). No network
+    calls ever happen unless explicitly opted in.
+  - Pipeline: MusicBrainz WS2 search → Cover Art Archive → iTunes Search API
+    fallback.
+  - 30-day disk cache at `$XDG_CACHE_HOME/dapctl/metadata/cover_cache.json`.
+  - Rate limits: 1.1 s between MusicBrainz requests, 3.5 s between iTunes.
+  - Saves `folder.jpg` in each album directory; non-JPEG images are converted
+    via the `image` crate.
+- **`docs/NETWORK.md`** — documents all network endpoints, user-agent string,
+  rate limits, cache TTL, and opt-in policy.
+
+### Changed
+- **Library normalization**: artist and album grouping keys are now
+  case-insensitive and diacritic-insensitive (à/á/â/ä → a, ñ → n, í → i, …).
+  "Kings Of Leon" / "kings of leon" and "Rosalía" / "Rosalia" now merge into
+  one entry. Display name is the first value seen for each normalised key.
+- **TUI UX improvements**:
+  - Diff view: filter tabs rendered as a visual tab row with per-tab counts
+    and active-tab highlight; replaces the plain header line.
+  - New Profile wizard: dot step indicator `● ● ○ ○ ○` at the top of each
+    step shows progress through the 5-step flow.
+  - Profiles view: sync mode badge is coloured (mirror → warn amber, additive
+    → muted green); last-sync indicator `✓ Xh ago` shown when available.
+  - Player: repeat/shuffle state displayed inline in the HiFi metadata line
+    (`↺` all-repeat · `↺1` one-repeat · `⇄` shuffle). Focused pane title
+    shown in bold with `▶` prefix.
+  - Queue pane title shows current position `(X/N)`.
+
+### Dependencies added
+- `reqwest 0.12` (blocking, native-tls) — cover fetch HTTP client.
+- `image 0.25` (jpeg + png features) — JPEG conversion for downloaded covers.
+
+---
+
 ## [0.3.0] — 2026-05-01
 
 ### Added

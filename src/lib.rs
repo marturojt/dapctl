@@ -8,6 +8,7 @@
 pub mod audit;
 pub mod cli;
 pub mod config;
+pub mod cover;
 pub mod dap;
 pub mod diff;
 pub mod export;

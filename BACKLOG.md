@@ -170,7 +170,7 @@ See CHANGELOG [0.3.0] for the full list. Audit and cover fetch deferred to v0.4.
 
 ---
 
-## Milestone 4 — v0.4 Player Tier 2 + Audit + Cover fetch
+## Milestone 4 — v0.4 Player Tier 2 + Audit + Cover fetch  ·  *done (released 2026-05-05)*
 
 ### Player Tier 2
 
@@ -197,13 +197,14 @@ See CHANGELOG [0.3.0] for the full list. Audit and cover fetch deferred to v0.4.
 
 ### Cover fetch
 
-- [ ] `cover::musicbrainz` — (artist, album) → MBID → Cover Art Archive.
+- [x] `cover::musicbrainz` — (artist, album) → MBID → Cover Art Archive.
       Rate: 1 req/s. Cache TTL 30 days in `$XDG_CACHE_HOME/dapctl/metadata/`.
-- [ ] `cover::itunes` — iTunes Search API fallback. Rate: 20 req/min.
-- [ ] Download to `<album>/folder.jpg`. Resize to ≥600×600 JPEG.
-- [ ] `dapctl cover fetch <path> [--online]` — offline by default.
-- [ ] `docs/NETWORK.md` — policy, user-agent, rate limits, opt-in.
-- [ ] Add `reqwest` (blocking) and `image` to Cargo.toml.
+- [x] `cover::itunes` — iTunes Search API fallback. Rate: 20 req/min.
+- [x] Download to `<album>/folder.jpg`. JPEG conversion via `image` crate.
+- [x] `dapctl cover fetch <path> [--online]` — offline by default, exits
+      with policy message and code 2 when `--online` not passed.
+- [x] `docs/NETWORK.md` — policy, user-agent, rate limits, opt-in.
+- [x] Add `reqwest` (blocking, native-tls) and `image` to Cargo.toml.
 
 ---
 

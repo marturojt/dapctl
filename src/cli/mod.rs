@@ -4,6 +4,7 @@ use clap::{Parser, Subcommand};
 use ulid::Ulid;
 
 pub mod audit;
+pub mod cover;
 pub mod diff;
 pub mod export;
 pub mod log;
@@ -51,6 +52,8 @@ enum Command {
     Export(export::Args),
     /// Audit a music library for missing tags, cover art, and format issues.
     Audit(audit::Args),
+    /// Download missing cover art for albums in a library.
+    Cover(cover::Args),
 }
 
 /// Parse argv, initialise logging, and dispatch.
@@ -83,6 +86,7 @@ pub fn run() -> anyhow::Result<()> {
         Some(Command::Log(a)) => log::run(a),
         Some(Command::Export(a)) => export::run(a),
         Some(Command::Audit(a)) => audit::run(a),
+        Some(Command::Cover(a)) => cover::run(a),
     };
 
     crate::logging::finish(result.is_ok());
