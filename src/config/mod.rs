@@ -5,7 +5,7 @@ use globset::{Glob, GlobSet, GlobSetBuilder};
 
 pub mod schema;
 
-pub use schema::{Filters, Mode, SyncProfile, Transcode, TranscodeRule, Transfer, Verify};
+pub use schema::{Filters, Mode, Selective, SyncProfile, Transcode, TranscodeRule, Transfer, Verify};
 
 // ---------------------------------------------------------------------------
 // Loading
@@ -151,6 +151,26 @@ impl ResolvedProfile {
         }
         Ok(Some(builder.build()?))
     }
+}
+
+/// Rewrite only the `[selective].include_paths` key in `path`, preserving all
+/// other content (comments, ordering, whitespace) via toml_edit.
+pub fn save_selective_paths(path: &std::path::Path, paths: &[String]) -> anyhow::Result<()> {
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("cannot read {path:?}"))?;
+    let mut doc: toml_edit::DocumentMut = content
+        .parse()
+        .with_context(|| format!("cannot parse {path:?} as TOML"))?;
+
+    let sel = doc.entry("selective").or_insert(toml_edit::table());
+    let mut arr = toml_edit::Array::new();
+    for p in paths {
+        arr.push(p.as_str());
+    }
+    sel["include_paths"] = toml_edit::value(arr);
+
+    std::fs::write(path, doc.to_string())
+        .with_context(|| format!("cannot write {path:?}"))
 }
 
 /// Load a sync profile by name and resolve its DAP profile.

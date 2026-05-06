@@ -1,0 +1,21 @@
+# Maintainer: Arturo Jimenez <arturo.jimenez@grupocsi.com>
+pkgname=dapctl-bin
+pkgver=0.4.0
+pkgrel=1
+pkgdesc="TUI/CLI sync tool for HiFi Digital Audio Players"
+arch=('x86_64' 'aarch64')
+url="https://dapctl.com"
+license=('GPL-3.0-or-later')
+provides=('dapctl')
+conflicts=('dapctl' 'dapctl-git')
+options=(!debug)
+
+source_x86_64=("${pkgname}-${pkgver}-x86_64.tar.gz::https://github.com/marturojt/dapctl/releases/download/v${pkgver}/dapctl-v${pkgver}-x86_64-unknown-linux-gnu.tar.gz")
+source_aarch64=("${pkgname}-${pkgver}-aarch64.tar.gz::https://github.com/marturojt/dapctl/releases/download/v${pkgver}/dapctl-v${pkgver}-aarch64-unknown-linux-gnu.tar.gz")
+
+sha256sums_x86_64=('90b089584ee34627fa4702f1c0308e751b69ee8204395ea996be0a841dab4722')
+sha256sums_aarch64=('6e77e3523024635654a0837377a7b5b1dc118db4e4c0071ebb356195d94e357e')
+
+package() {
+    install -Dm755 dapctl "${pkgdir}/usr/bin/dapctl"
+}

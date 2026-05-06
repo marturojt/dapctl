@@ -426,10 +426,10 @@ impl NewProfileState {
     }
 
     pub fn selected_mode(&self) -> &'static str {
-        if self.mode_choice == 0 {
-            "additive"
-        } else {
-            "mirror"
+        match self.mode_choice {
+            0 => "additive",
+            1 => "mirror",
+            _ => "selective",
         }
     }
 }
@@ -592,6 +592,13 @@ pub struct App {
     pub resume_candidate: Option<crate::player::history::HistoryEntry>,
     /// Profile name → unix timestamp of last successful sync (persisted).
     pub last_sync: std::collections::HashMap<String, u64>,
+
+    // Selective mode
+    /// Set of relative parent-directory paths currently marked for inclusion.
+    pub selective_paths: std::collections::HashSet<String>,
+    /// When true, selective_paths will be initialised with all parent dirs
+    /// from the first diff result (first time opening a selective profile).
+    pub selective_init_pending: bool,
 }
 
 /// A single parsed JSONL log entry for display.
@@ -642,7 +649,7 @@ impl App {
 
         Ok(Self {
             view: View::Home,
-            theme: Theme::default(),
+            theme: Theme::new(),
             profiles,
             scan,
             profile_idx: 0,
@@ -666,6 +673,8 @@ impl App {
             scan_rx: None,
             resume_candidate: None,
             last_sync: load_last_sync().unwrap_or_default(),
+            selective_paths: std::collections::HashSet::new(),
+            selective_init_pending: false,
         })
     }
 
@@ -710,6 +719,26 @@ impl App {
         self.diff_state = DiffState::Loading;
         self.diff_entry_idx = 0;
         self.diff_entry_filter = EntryFilter::All;
+
+        // Initialise selective state from the profile's saved include_paths.
+        if let Some((_, profile)) = self.profiles.get(self.profile_idx) {
+            if matches!(profile.profile.mode, crate::config::Mode::Selective) {
+                let saved = &profile.selective.include_paths;
+                if saved.is_empty() {
+                    // No saved selection yet → will default to all-selected
+                    // once the diff result is available.
+                    self.selective_paths.clear();
+                    self.selective_init_pending = true;
+                } else {
+                    self.selective_paths = saved.iter().cloned().collect();
+                    self.selective_init_pending = false;
+                }
+            } else {
+                self.selective_paths.clear();
+                self.selective_init_pending = false;
+            }
+        }
+
         self.view = View::Diff;
     }
 

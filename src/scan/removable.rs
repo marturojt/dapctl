@@ -58,15 +58,64 @@ fn volume_label(mount: &Utf8PathBuf) -> Option<String> {
     {
         windows_volume_label(mount)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
     {
-        // On Linux/macOS sysinfo name is usually the device node (/dev/sdb1),
-        // not the label. Returning None here; the heuristic falls back to
-        // marker-file detection. Future improvement: parse /proc/mounts or
-        // use IOKit to surface the label.
+        linux_volume_label(mount)
+    }
+    #[cfg(target_os = "macos")]
+    {
+        macos_volume_label(mount)
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+    {
         let _ = mount;
         None
     }
+}
+
+/// Linux: run `lsblk -o LABEL,MOUNTPOINT -P -n` and match the mount point.
+/// Falls back to `None` when lsblk is unavailable or the label is empty.
+#[cfg(target_os = "linux")]
+fn linux_volume_label(mount: &Utf8PathBuf) -> Option<String> {
+    fn kv<'a>(line: &'a str, key: &str) -> Option<&'a str> {
+        let prefix = format!("{key}=\"");
+        let start = line.find(prefix.as_str())? + prefix.len();
+        let rest = &line[start..];
+        Some(&rest[..rest.find('"')?])
+    }
+
+    let out = std::process::Command::new("lsblk")
+        .args(["-o", "LABEL,MOUNTPOINT", "-P", "-n"])
+        .output()
+        .ok()?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    for line in stdout.lines() {
+        if let (Some(label), Some(mp)) = (kv(line, "LABEL"), kv(line, "MOUNTPOINT")) {
+            if mp == mount.as_str() && !label.is_empty() {
+                return Some(label.to_owned());
+            }
+        }
+    }
+    None
+}
+
+/// macOS: run `diskutil info <mount>` and extract "Volume Name:".
+#[cfg(target_os = "macos")]
+fn macos_volume_label(mount: &Utf8PathBuf) -> Option<String> {
+    let out = std::process::Command::new("diskutil")
+        .args(["info", mount.as_str()])
+        .output()
+        .ok()?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    for line in stdout.lines() {
+        if let Some(rest) = line.trim().strip_prefix("Volume Name:") {
+            let label = rest.trim();
+            if !label.is_empty() && label != "Not applicable" {
+                return Some(label.to_owned());
+            }
+        }
+    }
+    None
 }
 
 #[cfg(windows)]

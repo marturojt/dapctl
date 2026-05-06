@@ -324,6 +324,10 @@ fn render_mode(f: &mut Frame, app: &App, content: Rect, footer: Rect) {
             "mirror",
             "copy new + modified, DELETE orphans from destination",
         ),
+        (
+            "selective",
+            "mark albums to include; remembers your selection",
+        ),
     ];
 
     let items: Vec<ListItem> = modes

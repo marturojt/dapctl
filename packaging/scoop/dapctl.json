@@ -1,0 +1,23 @@
+{
+    "version": "0.4.0",
+    "description": "TUI/CLI sync tool for HiFi Digital Audio Players",
+    "homepage": "https://dapctl.com",
+    "license": "GPL-3.0-or-later",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/marturojt/dapctl/releases/download/v0.4.0/dapctl-v0.4.0-x86_64-pc-windows-msvc.zip",
+            "hash": "9f5cf6201f8588d329cf22a26b5b24b04d0b282e7270463133766339c6ab74d9"
+        }
+    },
+    "bin": "dapctl.exe",
+    "checkver": {
+        "github": "https://github.com/marturojt/dapctl"
+    },
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/marturojt/dapctl/releases/download/v$version/dapctl-v$version-x86_64-pc-windows-msvc.zip"
+            }
+        }
+    }
+}

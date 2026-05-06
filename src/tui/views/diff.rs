@@ -162,6 +162,7 @@ fn render_ready(
         f,
         theme,
         summary_area,
+        app,
         plan,
         source,
         destination,
@@ -169,8 +170,8 @@ fn render_ready(
         mode,
     );
     render_list_header(f, theme, list_header_area, app, plan);
-    render_entry_list(f, app, theme, list_area, plan);
-    render_footer(f, app, theme, footer_area);
+    render_entry_list(f, app, theme, list_area, plan, mode);
+    render_footer(f, app, theme, footer_area, mode);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -178,6 +179,7 @@ fn render_summary(
     f: &mut Frame,
     theme: &Theme,
     area: ratatui::layout::Rect,
+    app: &App,
     plan: &crate::diff::Plan,
     source: &camino::Utf8PathBuf,
     destination: &camino::Utf8PathBuf,
@@ -187,6 +189,7 @@ fn render_summary(
     let src_short = truncate(source.as_str(), 45);
     let dst_short = truncate(destination.as_str(), 45);
     let mode_str = format!("{mode:?}").to_lowercase();
+    let is_selective = matches!(mode, crate::config::Mode::Selective);
 
     let new_b = plan.total_bytes(EntryKind::New);
     let mod_b = plan.total_bytes(EntryKind::Modified);
@@ -258,19 +261,44 @@ fn render_summary(
             ),
         ]),
         Line::from(""),
-        // ETA
-        Line::from(vec![
-            Span::raw("  transfer: "),
-            Span::styled(
-                fmt_bytes(transfer),
-                Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
-            ),
-            Span::raw("   ETA: "),
-            Span::styled(
-                fmt_eta(eta),
-                Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
-            ),
-        ]),
+        // ETA / selective selection count
+        if is_selective {
+            let selected_dirs = &app.selective_paths;
+            let sel_count = plan
+                .entries
+                .iter()
+                .filter(|e| {
+                    let p = e.path.parent().map(|p| p.as_str()).unwrap_or("");
+                    selected_dirs.contains(p)
+                })
+                .count();
+            let total = plan.entries.len();
+            Line::from(vec![
+                Span::raw("  selected: "),
+                Span::styled(
+                    format!("{sel_count}/{total}"),
+                    Style::default().fg(theme.warn).add_modifier(Modifier::BOLD),
+                ),
+                Span::raw("  files   transfer: "),
+                Span::styled(
+                    fmt_bytes(transfer),
+                    Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
+                ),
+            ])
+        } else {
+            Line::from(vec![
+                Span::raw("  transfer: "),
+                Span::styled(
+                    fmt_bytes(transfer),
+                    Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
+                ),
+                Span::raw("   ETA: "),
+                Span::styled(
+                    fmt_eta(eta),
+                    Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
+                ),
+            ])
+        },
         Line::from(""),
     ];
 
@@ -329,9 +357,14 @@ fn render_entry_list(
     theme: &Theme,
     area: ratatui::layout::Rect,
     plan: &crate::diff::Plan,
+    mode: crate::config::Mode,
 ) {
     let filter = app.diff_entry_filter;
-    let path_width = (area.width as usize).saturating_sub(20).max(30);
+    let is_selective = matches!(mode, crate::config::Mode::Selective);
+    let sel_col = if is_selective { 4 } else { 0 };
+    let path_width = (area.width as usize)
+        .saturating_sub(20 + sel_col)
+        .max(20);
 
     let filtered: Vec<&crate::diff::Entry> = plan
         .entries
@@ -350,20 +383,36 @@ fn render_entry_list(
             };
             let path = truncate(e.path.as_str(), path_width);
             let size = fmt_bytes(e.size_bytes);
-            ListItem::new(Line::from(vec![
-                Span::raw("  "),
-                Span::styled(tag, tag_style.add_modifier(Modifier::BOLD)),
-                Span::raw("  "),
-                Span::styled(
-                    format!("{path:<path_width$}"),
-                    if e.kind == EntryKind::Same {
-                        Style::default().fg(theme.muted)
-                    } else {
-                        Style::default().fg(theme.fg)
-                    },
-                ),
-                Span::styled(format!("  {size:>10}"), Style::default().fg(theme.muted)),
-            ]))
+
+            let mut spans = vec![Span::raw("  ")];
+
+            if is_selective {
+                let parent = e.path.parent().map(|p| p.as_str()).unwrap_or("");
+                let selected = app.selective_paths.contains(parent);
+                let (sym, sym_style) = if selected {
+                    ("◆ ", Style::default().fg(theme.fg).add_modifier(Modifier::BOLD))
+                } else {
+                    ("◇ ", Style::default().fg(theme.muted))
+                };
+                spans.push(Span::styled(sym, sym_style));
+            }
+
+            spans.push(Span::styled(tag, tag_style.add_modifier(Modifier::BOLD)));
+            spans.push(Span::raw("  "));
+            spans.push(Span::styled(
+                format!("{path:<path_width$}"),
+                if e.kind == EntryKind::Same {
+                    Style::default().fg(theme.muted)
+                } else {
+                    Style::default().fg(theme.fg)
+                },
+            ));
+            spans.push(Span::styled(
+                format!("  {size:>10}"),
+                Style::default().fg(theme.muted),
+            ));
+
+            ListItem::new(Line::from(spans))
         })
         .collect();
 
@@ -385,12 +434,34 @@ fn render_entry_list(
     f.render_stateful_widget(list, area, &mut state);
 }
 
-fn render_footer(f: &mut Frame, app: &App, theme: &Theme, area: ratatui::layout::Rect) {
+fn render_footer(
+    f: &mut Frame,
+    app: &App,
+    theme: &Theme,
+    area: ratatui::layout::Rect,
+    mode: crate::config::Mode,
+) {
+    let is_selective = matches!(mode, crate::config::Mode::Selective);
     let footer_line = if let Some(ref msg) = app.flash {
         Line::from(Span::styled(
             format!("  {msg}"),
             Style::default().fg(theme.warn),
         ))
+    } else if is_selective {
+        Line::from(vec![
+            kb("j/k", theme),
+            Span::raw(" scroll  "),
+            kb("tab", theme),
+            Span::raw(" filter  "),
+            kb("x", theme),
+            Span::raw(" toggle album  "),
+            kb("r", theme),
+            Span::raw(" re-diff  "),
+            kb("y", theme),
+            Span::raw(" sync selected  "),
+            kb("esc", theme),
+            Span::raw(" back"),
+        ])
     } else {
         Line::from(vec![
             kb("j/k", theme),

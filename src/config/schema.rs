@@ -11,6 +11,8 @@ pub struct SyncProfile {
     pub transfer: Transfer,
     #[serde(default)]
     pub transcode: Transcode,
+    #[serde(default)]
+    pub selective: Selective,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,6 +90,16 @@ pub enum Verify {
     None,
     SizeMtime,
     Checksum,
+}
+
+/// Selective-mode inclusion list. Modified by the TUI and persisted via toml_edit.
+/// Ignored when `mode` is `additive` or `mirror`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Selective {
+    /// Relative directory prefixes to include (album-level paths, e.g.
+    /// "Tool/Lateralus"). Empty = sync nothing in selective mode.
+    #[serde(default)]
+    pub include_paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

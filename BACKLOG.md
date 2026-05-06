@@ -33,7 +33,7 @@ Released as `v0.1.0`. Validated: 2,108 FLAC · 75 GB · HiBy R4 microSD.
 - [x] `logging::init`: dual sink (human + JSONL), `run_id` propagation,
       schema v1 frozen. (req 8)
 - [x] `cli`: `--yes`, `--dry-run`, exit code convention. (req 10)
-- [ ] Error taxonomy (`thiserror`) with user-facing messages vs internal.
+- [ ] Error taxonomy (`thiserror`) with user-facing messages vs internal. (v1.0)
 
 ### Config & DAP catalogue  (req 1, 3, 6)
 
@@ -53,8 +53,8 @@ Released as `v0.1.0`. Validated: 2,108 FLAC · 75 GB · HiBy R4 microSD.
 - [x] `dapctl scan` human table + `--json` output + MTP guidance message.
 - [x] Windows: `GetVolumeInformationW` for correct volume label.
 - [x] Heuristic covers FiiO M11 family, Shanling, iBasso, Cayin, HiBy.
-- [ ] Linux: enhance with `lsblk --json` for more reliable label detection.
-- [ ] macOS: `diskutil info -plist` for stricter removable detection.
+- [x] Linux: `lsblk -o LABEL,MOUNTPOINT -P -n` for volume label detection.
+- [x] macOS: `diskutil info <mount>` for volume label detection.
 
 **Note:** MTP connections are not supported by design. The primary
 workflow is microSD extraction + card reader. See README for rationale.
@@ -82,8 +82,10 @@ workflow is microSD extraction + card reader. See README for rationale.
 - [x] Source mtime preserved on destination after rename (re-run idempotency).
 - [x] `repair_dest_mtimes` pre-flight: fixes existing destinations in seconds.
 - [x] Validated: 2,108 FLAC · 75 GB · HiBy R4 microSD · mirror + additive.
-- [ ] `selective` mode: read `[selective]` from sync profile TOML,
+- [x] `selective` mode: read `[selective]` from sync profile TOML,
       TUI writes back via `toml_edit` preserving comments.
+      `x` key toggles album-level selection (◆/◇). First open defaults
+      to all albums selected. Wizard offers selective as 3rd mode option.
 - [ ] Manifest resume: on re-run, skip `Done` entries (currently re-diffs
       cleanly via temp file exclusion — full resume is a v0.2 refinement).
 
@@ -103,7 +105,8 @@ workflow is microSD extraction + card reader. See README for rationale.
       `<name>-copy`. Writes `.toml` via `toml_edit`.
 - [x] View: `log` — scrollable JSONL run viewer. j/k / g/G / r reload.
       Accessible via `l` from profiles or after sync completes.
-- [ ] Theme plumbing: respect `NO_COLOR`, load palette from config.
+- [x] Theme: `NO_COLOR` environment variable respected (https://no-color.org);
+      `Theme::new()` collapses to terminal defaults when set.
 
 ### Tests
 
@@ -120,8 +123,8 @@ workflow is microSD extraction + card reader. See README for rationale.
 - [x] `release.yml`: Linux glibc x86_64+ARM64 (native runners),
       macOS universal (lipo x86_64+aarch64), Windows MSVC. Draft release + SHA256SUMS.
 - [x] Homebrew tap: `github.com/marturojt/homebrew-tap` — `brew tap marturojt/tap && brew install dapctl`.
-- [ ] Scoop bucket skeleton.
-- [ ] AUR `PKGBUILD` (git + bin variants).
+- [x] Scoop bucket skeleton — `packaging/scoop/dapctl.json` with autoupdate.
+- [x] AUR `PKGBUILD` (bin variant) — `packaging/aur/PKGBUILD`.
 
 ---
 

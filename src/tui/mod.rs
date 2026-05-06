@@ -223,6 +223,9 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
         (KeyCode::Char('y'), _) if app.view == View::Diff => {
             handle_sync_confirm(app);
         }
+        (KeyCode::Char('x'), _) if app.view == View::Diff => {
+            toggle_selective(app);
+        }
         (KeyCode::Char(' '), _) if app.view == View::Diff => {
             enqueue_diff_entry(app);
         }
@@ -272,11 +275,29 @@ fn launch_sync(app: &mut App) {
     };
 
     // Clone everything the thread needs.
-    let plan = result.plan.clone();
+    let mut plan = result.plan.clone();
     let source = source.clone();
     let destination = destination.clone();
     let profile_name = profile_name.clone();
     let mode = *mode;
+
+    // Selective mode: filter plan + persist the selection to the profile TOML.
+    if matches!(mode, Mode::Selective) {
+        let sel = &app.selective_paths;
+        plan.entries.retain(|e| {
+            let parent = e.path.parent().map(|p| p.as_str()).unwrap_or("");
+            sel.contains(parent)
+        });
+        // Write back selected paths, preserving comments via toml_edit.
+        if let Some((file_stem, _)) = app.profiles.get(app.profile_idx) {
+            if let Ok(dir) = crate::config::profiles_dir() {
+                let toml_path = dir.join(format!("{file_stem}.toml"));
+                let mut paths: Vec<String> = app.selective_paths.iter().cloned().collect();
+                paths.sort();
+                let _ = crate::config::save_selective_paths(&toml_path, &paths);
+            }
+        }
+    }
 
     let Some((_, profile)) = app.profiles.get(app.profile_idx) else {
         return;
@@ -317,6 +338,49 @@ fn launch_sync(app: &mut App) {
     app.progress_rx = Some(rx);
     app.progress_state = Some(ProgressState::new(profile_name, total_bytes));
     app.view = View::Progress;
+}
+
+// ── Selective mode toggle ─────────────────────────────────────────────────────
+
+fn toggle_selective(app: &mut App) {
+    use crate::config::Mode;
+
+    let DiffState::Ready { result, mode, .. } = &app.diff_state else {
+        return;
+    };
+    if !matches!(mode, Mode::Selective) {
+        app.set_flash("x = toggle selection (only in selective mode profiles)");
+        return;
+    }
+
+    let filter = app.diff_entry_filter;
+    let filtered: Vec<_> = result
+        .plan
+        .entries
+        .iter()
+        .filter(|e| filter.matches(e.kind))
+        .collect();
+
+    let Some(entry) = filtered.get(app.diff_entry_idx) else {
+        return;
+    };
+
+    // Album-level granularity: key = parent directory of the entry.
+    let parent = entry
+        .path
+        .parent()
+        .map(|p| p.as_str().to_owned())
+        .unwrap_or_default();
+    if parent.is_empty() {
+        app.set_flash("cannot select root-level files individually");
+        return;
+    }
+
+    if app.selective_paths.contains(&parent) {
+        app.selective_paths.remove(&parent);
+    } else {
+        app.selective_paths.insert(parent);
+    }
 }
 
 // ── New profile wizard ────────────────────────────────────────────────────────
@@ -443,7 +507,7 @@ fn handle_wizard_key(app: &mut App, key: crossterm::event::KeyEvent) {
         WizardStep::Mode => {
             let wiz = app.wizard.as_mut().unwrap();
             match key.code {
-                K::Char('j') | K::Down => wiz.mode_choice = (wiz.mode_choice + 1).min(1),
+                K::Char('j') | K::Down => wiz.mode_choice = (wiz.mode_choice + 1).min(2),
                 K::Char('k') | K::Up => wiz.mode_choice = wiz.mode_choice.saturating_sub(1),
                 K::Enter => wiz.step = WizardStep::Confirm,
                 _ => {}
@@ -590,6 +654,19 @@ fn compute_diff(app: &mut App) {
 
     match crate::diff::diff(&resolved, &source, &destination) {
         Ok(result) => {
+            // First time opening a selective profile with no saved selection:
+            // default to all album directories selected.
+            if app.selective_init_pending {
+                app.selective_paths = result
+                    .plan
+                    .entries
+                    .iter()
+                    .filter_map(|e| e.path.parent())
+                    .map(|p| p.as_str().to_owned())
+                    .filter(|p| !p.is_empty())
+                    .collect();
+                app.selective_init_pending = false;
+            }
             app.diff_state = DiffState::Ready {
                 result: Box::new(result),
                 source,
