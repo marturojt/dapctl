@@ -299,7 +299,20 @@ fn render_summary(
                 ),
             ])
         },
-        Line::from(""),
+        // Warning line (or empty) — fits in the 10-line summary area
+        if !plan.warnings.is_empty() {
+            let n = plan.warnings.len();
+            Line::from(Span::styled(
+                format!(
+                    "  ⚠  {} path warning{}",
+                    n,
+                    if n == 1 { "" } else { "s" }
+                ),
+                Style::default().fg(theme.warn),
+            ))
+        } else {
+            Line::from("")
+        },
     ];
 
     f.render_widget(

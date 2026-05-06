@@ -1,0 +1,29 @@
+---
+source: tests/snapshots.rs
+assertion_line: 66
+expression: "&plan"
+---
+{
+  "entries": [
+    {
+      "kind": "new",
+      "path": "Tool/Lateralus/01 - The Grudge.flac",
+      "size_bytes": 90508288
+    },
+    {
+      "kind": "modified",
+      "path": "Radiohead/OK Computer/06 - Karma Police.flac",
+      "size_bytes": 33685504
+    },
+    {
+      "kind": "orphan",
+      "path": "Nickelback/How You Remind Me.mp3",
+      "size_bytes": 5242880
+    },
+    {
+      "kind": "same",
+      "path": "Portishead/Dummy/03 - Strangers.flac",
+      "size_bytes": 52428800
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+---
+source: tests/snapshots.rs
+assertion_line: 127
+expression: warnings
+---
+[
+    PathWarning {
+        path: "dddddddddddddddddddddddddddddd/dddddddddddddddddddddddddddddd/dddddddddddddddddddddddddddddd/dddddddddddddddddddddddddddddd/t.flac",
+        kind: PathTooLong,
+        length_bytes: 137,
+        limit_bytes: 128,
+    },
+]

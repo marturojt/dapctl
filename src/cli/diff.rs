@@ -1,6 +1,6 @@
 use clap::Args as ClapArgs;
 
-use crate::diff::EntryKind;
+use crate::diff::{EntryKind, PathWarningKind};
 use crate::scan::fmt_bytes;
 
 #[derive(ClapArgs, Debug)]
@@ -110,6 +110,29 @@ pub fn run(args: Args) -> anyhow::Result<()> {
                 "  ... and {} more (use --json for full list)",
                 actionable.len() - MAX_SHOWN
             );
+        }
+    }
+
+    // ── Path warnings ────────────────────────────────────────────────────────
+    if !plan.warnings.is_empty() {
+        println!();
+        println!("  ── PATH WARNINGS {}", "─".repeat(46));
+        for w in &plan.warnings {
+            let detail = match w.kind {
+                PathWarningKind::FilenameTooLong => format!(
+                    "filename {} bytes (limit {})",
+                    w.length_bytes, w.limit_bytes
+                ),
+                PathWarningKind::PathTooLong => format!(
+                    "full path {} bytes (limit {})",
+                    w.length_bytes, w.limit_bytes
+                ),
+            };
+            println!(
+                "  ⚠  {:<50}",
+                truncate(w.path.as_ref(), 50),
+            );
+            println!("     {detail}");
         }
     }
 

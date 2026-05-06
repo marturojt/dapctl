@@ -1,0 +1,47 @@
+schema_version = 1
+
+[dap]
+id           = "hiby-r6"
+name         = "HiBy R6 Pro III"
+vendor       = "HiBy"
+firmware_min = "1.0.0"
+sources      = [
+  "https://store.hiby.com/products/hiby-r6-pro-iii",
+  "https://www.head-fi.org/threads/hiby-r6-pro-iii.973241/",
+]
+
+[filesystem]
+preferred          = "exFAT"
+supported          = ["FAT32", "exFAT"]
+max_filename_bytes = 255
+max_path_bytes     = 4096
+case_sensitive     = false
+
+[codecs]
+lossless           = ["FLAC", "ALAC", "WAV", "APE", "DSF", "DFF"]
+lossy              = ["MP3", "AAC", "OGG", "OPUS"]
+max_sample_rate_hz = 768000
+max_bit_depth      = 32
+dsd                = ["DSD64", "DSD128", "DSD256", "DSD512"]
+
+[layout]
+music_root                = "/Music"
+prefers_artist_album_tree = true
+
+[exclude]
+globs = [
+  ".thumbnails/**",
+  "HiByMusic/.cache/**",
+  ".nomedia",
+  "*.db-journal",
+  "System Volume Information/**",
+  "$RECYCLE.BIN/**",
+  ".Trash-*/**",
+  ".DS_Store",
+  "._*",
+  "**/*.dapctl-tmp",
+]
+
+[quirks]
+warn_on_embedded_art_mb = 10
+normalize_unicode       = "NFC"

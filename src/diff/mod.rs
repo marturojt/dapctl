@@ -2,7 +2,7 @@ pub mod compare;
 pub mod plan;
 pub mod walker;
 
-pub use plan::{Entry, EntryKind, Plan};
+pub use plan::{Entry, EntryKind, PathWarning, PathWarningKind, Plan};
 
 use camino::Utf8Path;
 
@@ -65,7 +65,12 @@ pub fn diff(
         dst = dst_entries.len(),
     );
 
-    let plan = compare::compare(&src_entries, &dst_entries, profile.sync.transfer.verify);
+    let mut plan = compare::compare(&src_entries, &dst_entries, profile.sync.transfer.verify);
+    plan.warnings = check_path_limits(
+        &plan.entries,
+        &profile.dap.filesystem,
+        &profile.dap.layout.music_root,
+    );
 
     tracing::info!(
         event = "plan_ready",
@@ -74,6 +79,7 @@ pub fn diff(
         orphan = plan.count(EntryKind::Orphan),
         same = plan.count(EntryKind::Same),
         transfer_bytes = plan.transfer_bytes(),
+        path_warnings = plan.warnings.len(),
     );
 
     Ok(DiffResult {
@@ -81,4 +87,46 @@ pub fn diff(
         dst_count: dst_entries.len(),
         plan,
     })
+}
+
+/// Check every New/Modified entry against the DAP filesystem limits.
+/// Returns one warning per entry (filename-too-long takes precedence over path-too-long).
+pub fn check_path_limits(
+    entries: &[Entry],
+    filesystem: &crate::dap::Filesystem,
+    music_root: &str,
+) -> Vec<PathWarning> {
+    let mut warnings = Vec::new();
+    for entry in entries {
+        if !matches!(entry.kind, EntryKind::New | EntryKind::Modified) {
+            continue;
+        }
+        let mut filename_warned = false;
+        for component in entry.path.components() {
+            let s = component.as_str();
+            if s.len() > filesystem.max_filename_bytes as usize {
+                warnings.push(PathWarning {
+                    path: entry.path.clone(),
+                    kind: PathWarningKind::FilenameTooLong,
+                    length_bytes: s.len(),
+                    limit_bytes: filesystem.max_filename_bytes,
+                });
+                filename_warned = true;
+                break;
+            }
+        }
+        if !filename_warned {
+            // +1 for the '/' separator between music_root and relative path
+            let full_len = music_root.len() + 1 + entry.path.as_str().len();
+            if full_len > filesystem.max_path_bytes as usize {
+                warnings.push(PathWarning {
+                    path: entry.path.clone(),
+                    kind: PathWarningKind::PathTooLong,
+                    length_bytes: full_len,
+                    limit_bytes: filesystem.max_path_bytes,
+                });
+            }
+        }
+    }
+    warnings
 }

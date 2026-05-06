@@ -69,7 +69,8 @@ workflow is microSD extraction + card reader. See README for rationale.
 - [x] `diff::diff()` high-level entry point used by CLI and TUI.
 - [x] `dapctl diff <profile>` human summary + entry list + `--json`.
 - [x] `Verify::Checksum` with streaming `blake3` (v0.2 — landed on main).
-- [ ] Filesystem-aware path checks: warn on names exceeding DAP limits.
+- [x] Filesystem-aware path checks: warn on names exceeding DAP limits.
+      `PathWarning` / `check_path_limits` in diff; shown in CLI + TUI.
 
 ### Transfer  (req 5, 7, 9)
 
@@ -115,7 +116,8 @@ workflow is microSD extraction + card reader. See README for rationale.
 - [x] 4 integration tests for checksum verification (silent corruption detection).
 - [x] 4 integration tests for tag filter graceful degradation.
 - [ ] Manifest resume integration test (kill + restart).
-- [ ] Snapshot tests (`insta`) for TUI views.
+- [x] Snapshot tests (`insta`) for plan serialisation, path-limit logic,
+      and DAP catalogue. `tests/snapshots.rs` (10 tests).
 - [x] CI matrix: Linux x86_64/ARM64, macOS, Windows.
 
 ### Release engineering
@@ -225,7 +227,9 @@ See CHANGELOG [0.3.0] for the full list.
 ## Milestone 5 — v1.0 Community profiles & SSH
 
 - [ ] SSH source via `russh`.
-- [ ] At least 6 DAP profiles with fixtures in CI.
+- [x] At least 6 DAP profiles with fixtures in CI.
+      7 builtins: fiio-m21, fiio-m11, ak-sr35, hiby-r6, shanling-m3ultra,
+      ibasso-dx320, generic. CI validated via `all_builtin_profiles_parse`.
 - [ ] AcoustID duplicate detection (optional, `chromaprint`).
 - [ ] Beets query integration as filter source.
 - [ ] Cover art embed in tags (lofty write, all formats, v1.0).

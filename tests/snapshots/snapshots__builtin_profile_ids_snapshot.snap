@@ -1,0 +1,14 @@
+---
+source: tests/snapshots.rs
+assertion_line: 187
+expression: ids
+---
+[
+    "ak-sr35",
+    "fiio-m11",
+    "fiio-m21",
+    "generic",
+    "hiby-r6",
+    "ibasso-dx320",
+    "shanling-m3ultra",
+]

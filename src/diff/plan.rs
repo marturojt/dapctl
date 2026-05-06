@@ -25,9 +25,31 @@ pub struct Entry {
     pub transcode_from: Option<String>,
 }
 
+/// Reason a path may cause problems on the target DAP filesystem.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PathWarningKind {
+    /// A single path component (directory or filename) exceeds `max_filename_bytes`.
+    FilenameTooLong,
+    /// The full on-device path (music_root + relative) exceeds `max_path_bytes`.
+    PathTooLong,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PathWarning {
+    pub path: Utf8PathBuf,
+    pub kind: PathWarningKind,
+    pub length_bytes: usize,
+    pub limit_bytes: u32,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Plan {
     pub entries: Vec<Entry>,
+    /// Paths that may be rejected or truncated by the DAP firmware.
+    /// Only populated when a DAP profile is available (i.e. via `diff::diff()`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<PathWarning>,
 }
 
 impl Plan {
