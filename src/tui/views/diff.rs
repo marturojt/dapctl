@@ -287,29 +287,38 @@ fn render_list_header(
     app: &App,
     plan: &crate::diff::Plan,
 ) {
-    let filter = app.diff_entry_filter;
-    let total = plan
-        .entries
-        .iter()
-        .filter(|e| filter.matches(e.kind))
-        .count();
+    use crate::tui::app::EntryFilter;
 
-    let line = Line::from(vec![
-        Span::raw("  "),
-        Span::styled(
-            filter.label(),
+    let tabs: &[(EntryFilter, &str, Option<EntryKind>)] = &[
+        (EntryFilter::All, "All", None),
+        (EntryFilter::New, "+New", Some(EntryKind::New)),
+        (EntryFilter::Modified, "~Mod", Some(EntryKind::Modified)),
+        (EntryFilter::Orphan, "-Orphan", Some(EntryKind::Orphan)),
+        (EntryFilter::Same, "=Same", Some(EntryKind::Same)),
+    ];
+
+    let mut spans = vec![Span::raw("  ")];
+    for (tab_filter, label, kind_opt) in tabs {
+        let count = match kind_opt {
+            Some(k) => plan.entries.iter().filter(|e| e.kind == *k).count(),
+            None => plan.entries.len(),
+        };
+        let is_active = app.diff_entry_filter == *tab_filter;
+        let text = format!(" {label} ({count}) ");
+        let style = if is_active {
             Style::default()
-                .fg(theme.fg)
-                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
-        ),
-        Span::styled(
-            format!("  ({total} entries)   tab to cycle filter"),
-            Style::default().fg(theme.muted),
-        ),
-    ]);
+                .fg(theme.sel_fg)
+                .bg(theme.sel_bg)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(theme.muted)
+        };
+        spans.push(Span::styled(text, style));
+        spans.push(Span::raw(" "));
+    }
 
     f.render_widget(
-        Paragraph::new(line).style(Style::default().bg(theme.bg)),
+        Paragraph::new(Line::from(spans)).style(Style::default().bg(theme.bg)),
         area,
     );
 }

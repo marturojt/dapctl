@@ -43,12 +43,34 @@ pub fn render(f: &mut Frame, app: &App) {
     let inner = outer.inner(area);
     f.render_widget(outer, area);
 
-    let [content_area, error_area, footer_area] = Layout::vertical([
+    let [dots_area, content_area, error_area, footer_area] = Layout::vertical([
+        Constraint::Length(1),
         Constraint::Fill(1),
         Constraint::Length(1),
         Constraint::Length(1),
     ])
     .areas(inner);
+
+    // Step dot indicators
+    let step_n = wiz.step.number();
+    let mut dot_spans: Vec<Span> = vec![Span::raw("  ")];
+    for i in 1usize..=5 {
+        if i > 1 {
+            dot_spans.push(Span::raw("  "));
+        }
+        let (ch, style) = if i < step_n {
+            ("●", Style::default().fg(theme.muted))
+        } else if i == step_n {
+            (
+                "●",
+                Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
+            )
+        } else {
+            ("○", Style::default().fg(theme.muted))
+        };
+        dot_spans.push(Span::styled(ch, style));
+    }
+    f.render_widget(Paragraph::new(Line::from(dot_spans)), dots_area);
 
     // ── Error line ────────────────────────────────────────────────────────
     if let Some(ref err) = wiz.error {

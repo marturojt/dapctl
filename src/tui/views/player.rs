@@ -9,7 +9,7 @@ use ratatui::Frame;
 
 use crate::player::engine::{PlayerEvent, PlayerHandle, PlayerStatus};
 use crate::player::library::{LibraryIndex, LibraryNode};
-use crate::player::queue::TrackInfo;
+use crate::player::queue::{RepeatMode, TrackInfo};
 use crate::tui::theme::Theme;
 
 // ── Focus ─────────────────────────────────────────────────────────────────────
@@ -211,6 +211,9 @@ impl PlayerState {
                     // Load .lrc alongside the audio file (best-effort).
                     let lrc_path = std::path::Path::new(track.path.as_str());
                     self.lyrics = crate::player::lyrics::load(lrc_path);
+                    if self.lyrics.is_none() {
+                        self.right_pane = RightPane::Queue;
+                    }
                     self.status.current = Some(track);
                     self.status.position = Duration::ZERO;
                     self.status.paused = false;
@@ -320,25 +323,31 @@ fn draw_library(f: &mut Frame, area: Rect, state: &mut PlayerState, theme: &Them
     let border_style = Style::default().fg(if is_focused { theme.fg } else { theme.muted });
 
     let n_artists = lib.index.artists.len();
+    let prefix = if is_focused { "▶ " } else { "  " };
     let block_title = if lib.search_active {
         format!(" / {}_ ", lib.search_input.value())
     } else if lib.scanning {
         if lib.scan_total > 0 {
             format!(
-                " library  ({}/{} scanning...) ",
+                " {prefix}library  ({}/{} scanning...) ",
                 lib.scan_done, lib.scan_total
             )
         } else {
-            " library  (scanning...) ".to_owned()
+            format!(" {prefix}library  (scanning...) ")
         }
     } else if n_artists > 0 {
-        format!(" library  ({n_artists}) ")
+        format!(" {prefix}library  ({n_artists}) ")
     } else {
-        " library ".to_owned()
+        format!(" {prefix}library ")
     };
 
+    let title_style = if is_focused {
+        Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(theme.muted)
+    };
     let block = Block::default()
-        .title(block_title.as_str())
+        .title(Line::from(Span::styled(block_title, title_style)))
         .borders(Borders::ALL)
         .border_style(border_style);
     let inner = block.inner(area);
@@ -490,13 +499,32 @@ fn draw_now_playing(f: &mut Frame, area: Rect, state: &mut PlayerState, theme: &
 
     let meta_line = Line::from(Span::styled(
         match track {
-            Some(t) => fmt_hifi_line(t, state.volume),
+            Some(t) => fmt_hifi_line(t, state.volume, state.status.repeat, state.status.shuffle),
             None => format!("  vol {}%", (state.volume * 100.0).round() as u32),
         },
         Style::default().fg(theme.muted),
     ));
 
-    let text_lines: Vec<Line> = vec![title_line, artist_album_line, meta_line, Line::raw("")];
+    let sleep_line = state.sleep_set.and_then(|(set_at, dur)| {
+        let elapsed = set_at.elapsed();
+        if elapsed < dur {
+            let remaining = dur - elapsed;
+            let m = remaining.as_secs() / 60;
+            let s = remaining.as_secs() % 60;
+            Some(Line::from(Span::styled(
+                format!("  ⏾ sleep {m}:{s:02}"),
+                Style::default().fg(theme.warn),
+            )))
+        } else {
+            None
+        }
+    });
+
+    let mut text_lines: Vec<Line> = vec![title_line, artist_album_line, meta_line];
+    if let Some(sl) = sleep_line {
+        text_lines.push(sl);
+    }
+    text_lines.push(Line::raw(""));
     let text_height = text_lines.len() as u16;
 
     if text_area.height < text_height + 1 {
@@ -564,22 +592,33 @@ fn draw_now_playing(f: &mut Frame, area: Rect, state: &mut PlayerState, theme: &
 
 fn draw_queue(f: &mut Frame, area: Rect, state: &mut PlayerState, theme: &Theme) {
     let n = state.status.queue_tracks.len();
-    let block_title = if n > 0 {
-        format!(" queue  ({n} tracks) ")
-    } else {
-        " queue ".to_owned()
-    };
-
     let has_library = state.library.is_some();
     let queue_focused = !has_library || state.focus == PlayerFocus::Queue;
+
+    let prefix = if queue_focused && has_library {
+        "▶ "
+    } else {
+        "  "
+    };
+    let block_title = if n > 0 {
+        let pos = state.status.queue_cursor + 1;
+        format!(" {prefix}queue  ({pos}/{n}) ")
+    } else {
+        format!(" {prefix}queue ")
+    };
+
     let border_style = Style::default().fg(if queue_focused && has_library {
         theme.fg
     } else {
         theme.muted
     });
-
+    let title_style = if queue_focused && has_library {
+        Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(theme.muted)
+    };
     let block = Block::default()
-        .title(block_title.as_str())
+        .title(Line::from(Span::styled(block_title, title_style)))
         .borders(Borders::ALL)
         .border_style(border_style);
     let inner = block.inner(area);
@@ -774,7 +813,7 @@ fn fmt_dur(d: Duration) -> String {
     }
 }
 
-fn fmt_hifi_line(track: &TrackInfo, volume: f32) -> String {
+fn fmt_hifi_line(track: &TrackInfo, volume: f32, repeat: RepeatMode, shuffle: bool) -> String {
     let fmt = track.path.extension().unwrap_or("").to_uppercase();
     let vol_pct = (volume * 100.0).round() as u32;
 
@@ -795,6 +834,14 @@ fn fmt_hifi_line(track: &TrackInfo, volume: f32) -> String {
         parts.push(format!("{br}kbps"));
     }
     parts.push(format!("vol {vol_pct}%"));
+    match repeat {
+        RepeatMode::Off => {}
+        RepeatMode::All => parts.push("↺".to_owned()),
+        RepeatMode::One => parts.push("↺1".to_owned()),
+    }
+    if shuffle {
+        parts.push("⇄".to_owned());
+    }
 
     format!("  {}", parts.join("  ·  "))
 }

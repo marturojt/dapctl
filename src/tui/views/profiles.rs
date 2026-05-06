@@ -120,14 +120,24 @@ fn render_profiles(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         .profiles
         .iter()
         .map(|(_, p)| {
-            let mode = format!("{:?}", p.profile.mode).to_lowercase();
-            let src = truncate(&p.profile.source, 28);
-            let dst = truncate(&p.profile.destination, 28);
-            let line = format!(
-                "  {:<22}  {:<28} → {:<28}  [{}]",
-                p.profile.name, src, dst, mode
-            );
-            ListItem::new(line)
+            let mode_str = format!("{:?}", p.profile.mode).to_lowercase();
+            let is_mirror = matches!(p.profile.mode, crate::config::Mode::Mirror);
+            let mode_style = Style::default().fg(if is_mirror { theme.warn } else { theme.muted });
+            let src = truncate(&p.profile.source, 24);
+            let dst = truncate(&p.profile.destination, 24);
+            let sync_str = app
+                .last_sync
+                .get(&p.profile.name)
+                .map(|&ts| format!("  ✓ {}", fmt_since(ts)))
+                .unwrap_or_default();
+            ListItem::new(Line::from(vec![
+                Span::raw(format!(
+                    "  {:<20}  {:<24} → {:<24}  ",
+                    p.profile.name, src, dst
+                )),
+                Span::styled(format!("[{mode_str}]"), mode_style),
+                Span::styled(sync_str, Style::default().fg(theme.muted)),
+            ]))
         })
         .collect();
 
@@ -238,4 +248,22 @@ fn dap_separator(theme: &crate::tui::theme::Theme) -> Block<'static> {
     Block::new()
         .borders(Borders::TOP)
         .border_style(Style::default().fg(theme.muted))
+}
+
+fn fmt_since(epoch_secs: u64) -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(epoch_secs);
+    let diff = now.saturating_sub(epoch_secs);
+    if diff < 90 {
+        "just now".to_owned()
+    } else if diff < 3600 {
+        format!("{}m ago", diff / 60)
+    } else if diff < 86_400 {
+        format!("{}h ago", diff / 3600)
+    } else {
+        format!("{}d ago", diff / 86_400)
+    }
 }

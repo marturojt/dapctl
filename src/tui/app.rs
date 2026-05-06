@@ -451,6 +451,7 @@ pub struct ProgressState {
     pub recent: VecDeque<RecentLine>,
     pub finished: bool,
     pub finish_stats: Option<Stats>,
+    pub recorded: bool,
     started: Instant,
 }
 
@@ -475,6 +476,7 @@ impl ProgressState {
             recent: VecDeque::with_capacity(MAX_RECENT + 1),
             finished: false,
             finish_stats: None,
+            recorded: false,
             started: Instant::now(),
         }
     }
@@ -588,6 +590,8 @@ pub struct App {
     pub scan_rx: Option<Receiver<crate::player::scanner::ScanEvent>>,
     /// Pending resume candidate — applied when the matching track starts.
     pub resume_candidate: Option<crate::player::history::HistoryEntry>,
+    /// Profile name → unix timestamp of last successful sync (persisted).
+    pub last_sync: std::collections::HashMap<String, u64>,
 }
 
 /// A single parsed JSONL log entry for display.
@@ -661,6 +665,7 @@ impl App {
             player_rx: None,
             scan_rx: None,
             resume_candidate: None,
+            last_sync: load_last_sync().unwrap_or_default(),
         })
     }
 
@@ -732,6 +737,14 @@ impl App {
         while let Ok(event) = rx.try_recv() {
             if let Some(ref mut ps) = self.progress_state {
                 ps.handle_event(event);
+            }
+        }
+        // Record last sync once when finished.
+        if let Some(ref mut ps) = self.progress_state {
+            if ps.finished && !ps.recorded {
+                ps.recorded = true;
+                let name = ps.profile_name.clone();
+                self.record_last_sync(&name);
             }
         }
     }
@@ -953,6 +966,16 @@ impl App {
             }
         }
     }
+
+    pub fn record_last_sync(&mut self, profile_name: &str) {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        self.last_sync.insert(profile_name.to_owned(), ts);
+        save_last_sync(&self.last_sync);
+    }
 }
 
 // ── Player helpers ────────────────────────────────────────────────────────────
@@ -984,6 +1007,27 @@ fn collect_source_tracks(source_dir: &str) -> Vec<crate::player::queue::TrackInf
 
     tracks.sort_by(|a, b| a.path.cmp(&b.path));
     tracks
+}
+
+// ── Last-sync helpers ─────────────────────────────────────────────────────────
+
+fn last_sync_path() -> Option<std::path::PathBuf> {
+    let dirs = directories::ProjectDirs::from("", "", "dapctl")?;
+    Some(dirs.data_local_dir().join("last_sync.json"))
+}
+
+fn load_last_sync() -> Option<std::collections::HashMap<String, u64>> {
+    let path = last_sync_path()?;
+    let content = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&content).ok()
+}
+
+fn save_last_sync(map: &std::collections::HashMap<String, u64>) {
+    if let Some(path) = last_sync_path() {
+        if let Ok(json) = serde_json::to_string(map) {
+            let _ = std::fs::write(path, json);
+        }
+    }
 }
 
 // ── Log helpers ───────────────────────────────────────────────────────────────
