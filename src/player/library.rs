@@ -4,6 +4,37 @@ use camino::Utf8Path;
 
 use crate::player::queue::TrackInfo;
 
+/// Normalise an artist/album name into a grouping key that is:
+/// - case-insensitive (all lowercase)
+/// - diacritic-insensitive (à/á/â/ä → a, ñ → n, í → i, …)
+///
+/// The original display name is preserved separately; this key is only
+/// used as the BTreeMap key so that "Kings Of Leon" and "Kings of Leon"
+/// (or "Rosalía" and "Rosalia") collapse into one entry.
+fn normalize_key(s: &str) -> String {
+    s.chars()
+        .flat_map(char::to_lowercase)
+        .map(|c| match c {
+            'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' | 'ā' | 'ă' | 'ą' => 'a',
+            'è' | 'é' | 'ê' | 'ë' | 'ē' | 'ĕ' | 'ě' | 'ę' => 'e',
+            'ì' | 'í' | 'î' | 'ï' | 'ī' | 'ĭ' | 'į' => 'i',
+            'ò' | 'ó' | 'ô' | 'õ' | 'ö' | 'ø' | 'ō' | 'ŏ' | 'ő' => 'o',
+            'ù' | 'ú' | 'û' | 'ü' | 'ū' | 'ŭ' | 'ů' | 'ű' | 'ų' => 'u',
+            'ñ' | 'ń' | 'ň' | 'ņ' => 'n',
+            'ç' | 'ć' | 'č' => 'c',
+            'ý' | 'ÿ' => 'y',
+            'ž' | 'ź' | 'ż' => 'z',
+            'š' | 'ś' | 'ş' => 's',
+            'ð' | 'ď' | 'đ' => 'd',
+            'ĺ' | 'ļ' | 'ľ' => 'l',
+            'ŕ' | 'ř' | 'ŗ' => 'r',
+            'ţ' | 'ť' => 't',
+            'ğ' | 'ĝ' => 'g',
+            c => c,
+        })
+        .collect()
+}
+
 // ── Data structures ───────────────────────────────────────────────────────────
 
 pub struct LibraryIndex {
@@ -38,24 +69,37 @@ impl LibraryIndex {
 
     /// Build from a flat track list.
     /// Groups by `album_artist` (falling back to `artist`, then path structure).
+    /// Grouping keys are normalised (case + diacritics) so that e.g.
+    /// "Kings Of Leon" / "Kings of Leon" and "Rosalía" / "Rosalia" merge
+    /// into one entry. The display name is the first value seen for each key.
     pub fn from_tracks(tracks: Vec<TrackInfo>, root: &Utf8Path) -> Self {
-        let mut tree: BTreeMap<String, BTreeMap<String, Vec<TrackInfo>>> = BTreeMap::new();
+        // BTreeMap<artist_key, (display_name, BTreeMap<album_key, (display_name, tracks)>)>
+        type AlbumMap = BTreeMap<String, (String, Vec<TrackInfo>)>;
+        let mut tree: BTreeMap<String, (String, AlbumMap)> = BTreeMap::new();
+
         for track in tracks {
-            let artist = group_artist(&track, root);
-            let album = group_album(&track, root);
-            tree.entry(artist)
-                .or_default()
-                .entry(album)
-                .or_default()
+            let artist_raw = group_artist(&track, root);
+            let album_raw = group_album(&track, root);
+            let artist_key = normalize_key(&artist_raw);
+            let album_key = normalize_key(&album_raw);
+
+            let (_, albums) = tree
+                .entry(artist_key)
+                .or_insert_with(|| (artist_raw, BTreeMap::new()));
+            albums
+                .entry(album_key)
+                .or_insert_with(|| (album_raw, Vec::new()))
+                .1
                 .push(track);
         }
+
         let artists = tree
             .into_iter()
-            .map(|(name, albums)| LibraryArtist {
+            .map(|(_, (name, albums))| LibraryArtist {
                 name,
                 albums: albums
                     .into_iter()
-                    .map(|(name, tracks)| LibraryAlbum { name, tracks })
+                    .map(|(_, (name, tracks))| LibraryAlbum { name, tracks })
                     .collect(),
             })
             .collect();
