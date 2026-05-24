@@ -44,7 +44,11 @@ fn tight_fs() -> dapctl::dap::Filesystem {
 fn plan_json_all_entry_kinds() {
     let plan = Plan {
         entries: vec![
-            mk_entry(EntryKind::New, "Tool/Lateralus/01 - The Grudge.flac", 90_508_288),
+            mk_entry(
+                EntryKind::New,
+                "Tool/Lateralus/01 - The Grudge.flac",
+                90_508_288,
+            ),
             mk_entry(
                 EntryKind::Modified,
                 "Radiohead/OK Computer/06 - Karma Police.flac",
@@ -88,10 +92,17 @@ fn plan_json_with_warnings() {
 fn no_warnings_for_normal_paths() {
     let entries = vec![
         mk_entry(EntryKind::New, "Artist/Album/01 - Track.flac", 1000),
-        mk_entry(EntryKind::Modified, "Other Artist/Record/02 - Song.flac", 2000),
+        mk_entry(
+            EntryKind::Modified,
+            "Other Artist/Record/02 - Song.flac",
+            2000,
+        ),
     ];
     let warnings = check_path_limits(&entries, &fat32_fs(), "/Music");
-    assert!(warnings.is_empty(), "expected no warnings, got {warnings:?}");
+    assert!(
+        warnings.is_empty(),
+        "expected no warnings, got {warnings:?}"
+    );
 }
 
 #[test]
@@ -131,11 +142,7 @@ fn warns_on_path_too_long() {
 fn only_one_warning_per_entry() {
     // Filename is too long — should produce exactly one warning, not two.
     let long = "B".repeat(70); // 70 bytes > 64 tight_fs limit
-    let entries = vec![mk_entry(
-        EntryKind::New,
-        &format!("Dir/{long}.flac"),
-        1000,
-    )];
+    let entries = vec![mk_entry(EntryKind::New, &format!("Dir/{long}.flac"), 1000)];
     let warnings = check_path_limits(&entries, &tight_fs(), "/Music");
     assert_eq!(warnings.len(), 1, "expected exactly one warning per entry");
     assert_eq!(warnings[0].kind, PathWarningKind::FilenameTooLong);
@@ -182,7 +189,10 @@ fn builtin_profile_count_at_least_seven() {
 
 #[test]
 fn builtin_profile_ids_snapshot() {
-    let mut ids: Vec<&str> = dapctl::dap::builtin::ALL.iter().map(|(id, _)| *id).collect();
+    let mut ids: Vec<&str> = dapctl::dap::builtin::ALL
+        .iter()
+        .map(|(id, _)| *id)
+        .collect();
     ids.sort();
     insta::assert_debug_snapshot!(ids);
 }

@@ -58,9 +58,7 @@ fn load_builtin(id: &str) -> anyhow::Result<DapProfile> {
         .iter()
         .find(|(bid, _)| *bid == id)
         .map(|(_, s)| *s)
-        .ok_or_else(|| DapError::UnknownId {
-            id: id.to_owned(),
-        })?;
+        .ok_or_else(|| DapError::UnknownId { id: id.to_owned() })?;
 
     toml::from_str(toml_str).map_err(|e| {
         anyhow::Error::from(DapError::ParseBuiltin {
@@ -81,11 +79,10 @@ fn load_user_override(id: &str) -> anyhow::Result<Option<DapProfile>> {
     if !path.exists() {
         return Ok(None);
     }
-    let content =
-        std::fs::read_to_string(&path).map_err(|e| DapError::ReadOverride {
-            path: path.clone(),
-            source: e,
-        })?;
+    let content = std::fs::read_to_string(&path).map_err(|e| DapError::ReadOverride {
+        path: path.clone(),
+        source: e,
+    })?;
     let profile: DapProfile = toml::from_str(&content).map_err(|e| DapError::InvalidOverride {
         path: path.clone(),
         reason: e.to_string(),

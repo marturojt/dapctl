@@ -294,10 +294,7 @@ pub fn embed(opts: &EmbedOptions, progress: impl Fn(&str)) -> Result<EmbedStats>
 
     for dir in &album_dirs {
         // Find a cover file already on disk for this album.
-        let cover_path = COVER_NAMES
-            .iter()
-            .map(|n| dir.join(n))
-            .find(|p| p.exists());
+        let cover_path = COVER_NAMES.iter().map(|n| dir.join(n)).find(|p| p.exists());
 
         let Some(cover_path) = cover_path else {
             stats.files_skipped_no_folder += count_embeddable_files(dir);
@@ -317,7 +314,10 @@ pub fn embed(opts: &EmbedOptions, progress: impl Fn(&str)) -> Result<EmbedStats>
         let jpeg_bytes = match to_jpeg(&cover_bytes) {
             Ok(b) => b,
             Err(e) => {
-                progress(&format!("  !  {} \u{2014} image error: {e}", dir_label(dir)));
+                progress(&format!(
+                    "  !  {} \u{2014} image error: {e}",
+                    dir_label(dir)
+                ));
                 stats.errors += 1;
                 continue;
             }
@@ -404,7 +404,10 @@ pub fn embed(opts: &EmbedOptions, progress: impl Fn(&str)) -> Result<EmbedStats>
                     album_embedded += 1;
                 }
                 Err(e) => {
-                    progress(&format!("  !  {} \u{2014} write error: {e}", path.display()));
+                    progress(&format!(
+                        "  !  {} \u{2014} write error: {e}",
+                        path.display()
+                    ));
                     stats.errors += 1;
                 }
             }

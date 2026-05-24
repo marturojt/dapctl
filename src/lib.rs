@@ -6,17 +6,17 @@
 //! presentation layer.
 
 pub mod audit;
-pub mod error;
-pub mod ssh;
 pub mod cli;
 pub mod config;
 pub mod cover;
 pub mod dap;
 pub mod diff;
+pub mod error;
 pub mod export;
 pub mod logging;
 pub mod player;
 pub mod scan;
+pub mod ssh;
 pub mod transcode;
 pub mod transfer;
 pub mod tui;

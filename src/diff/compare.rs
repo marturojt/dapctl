@@ -74,7 +74,10 @@ pub fn compare(src: &[WalkEntry], dst: &[WalkEntry], verify: Verify) -> Plan {
         });
     }
 
-    Plan { entries, warnings: Vec::new() }
+    Plan {
+        entries,
+        warnings: Vec::new(),
+    }
 }
 
 fn classify(src: &WalkEntry, dst: &WalkEntry, verify: Verify) -> EntryKind {

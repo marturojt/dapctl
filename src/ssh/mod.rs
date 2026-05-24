@@ -57,7 +57,12 @@ impl SshUri {
             (hostport.to_owned(), 22)
         };
 
-        Ok(Self { user, host, port, path })
+        Ok(Self {
+            user,
+            host,
+            port,
+            path,
+        })
     }
 
     pub fn is_ssh(s: &str) -> bool {
@@ -116,11 +121,7 @@ impl SshSession {
 
     /// Walk `self.remote_root` via `find -printf`, returning entries sorted by
     /// relative path. Glob filtering is applied client-side after listing.
-    pub fn walk(
-        &self,
-        exclude: &GlobSet,
-        include: Option<&GlobSet>,
-    ) -> anyhow::Result<Vec<Entry>> {
+    pub fn walk(&self, exclude: &GlobSet, include: Option<&GlobSet>) -> anyhow::Result<Vec<Entry>> {
         // find prints: relative_path TAB size TAB mtime_float_secs
         let find_cmd = format!(
             "find {} -type f -printf '%P\\t%s\\t%T@\\n'",
@@ -172,7 +173,7 @@ impl SshSession {
                 rel,
                 size,
                 mtime_ns,
-                hash: None,   // no remote blake3 in v1.0
+                hash: None, // no remote blake3 in v1.0
                 src_ext: None,
             });
         }
@@ -190,11 +191,7 @@ impl SshSession {
         dst_tmp: &camino::Utf8Path,
         mut on_progress: impl FnMut(u64),
     ) -> anyhow::Result<u64> {
-        let remote_path = format!(
-            "{}/{}",
-            self.remote_root.trim_end_matches('/'),
-            rel_path
-        );
+        let remote_path = format!("{}/{}", self.remote_root.trim_end_matches('/'), rel_path);
         let cat_cmd = format!("cat {}", shell_quote(&remote_path));
 
         let mut child = self
@@ -229,7 +226,10 @@ impl SshSession {
         }
 
         writer.flush()?;
-        writer.into_inner().context("SSH download flush error")?.sync_data()?;
+        writer
+            .into_inner()
+            .context("SSH download flush error")?
+            .sync_data()?;
 
         let status = child.wait()?;
         if !status.success() {

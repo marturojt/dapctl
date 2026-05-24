@@ -23,9 +23,7 @@ pub enum ConfigError {
         field: &'static str,
     },
 
-    #[error(
-        "unsupported schema_version {got} (this build supports version {expected})"
-    )]
+    #[error("unsupported schema_version {got} (this build supports version {expected})")]
     UnsupportedVersion { got: u32, expected: u32 },
 
     #[error("invalid glob pattern {pattern:?}: {reason}")]

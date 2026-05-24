@@ -303,11 +303,7 @@ fn render_summary(
         if !plan.warnings.is_empty() {
             let n = plan.warnings.len();
             Line::from(Span::styled(
-                format!(
-                    "  ⚠  {} path warning{}",
-                    n,
-                    if n == 1 { "" } else { "s" }
-                ),
+                format!("  ⚠  {} path warning{}", n, if n == 1 { "" } else { "s" }),
                 Style::default().fg(theme.warn),
             ))
         } else {
@@ -375,9 +371,7 @@ fn render_entry_list(
     let filter = app.diff_entry_filter;
     let is_selective = matches!(mode, crate::config::Mode::Selective);
     let sel_col = if is_selective { 4 } else { 0 };
-    let path_width = (area.width as usize)
-        .saturating_sub(20 + sel_col)
-        .max(20);
+    let path_width = (area.width as usize).saturating_sub(20 + sel_col).max(20);
 
     let filtered: Vec<&crate::diff::Entry> = plan
         .entries
@@ -403,7 +397,10 @@ fn render_entry_list(
                 let parent = e.path.parent().map(|p| p.as_str()).unwrap_or("");
                 let selected = app.selective_paths.contains(parent);
                 let (sym, sym_style) = if selected {
-                    ("◆ ", Style::default().fg(theme.fg).add_modifier(Modifier::BOLD))
+                    (
+                        "◆ ",
+                        Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
+                    )
                 } else {
                     ("◇ ", Style::default().fg(theme.muted))
                 };

@@ -128,10 +128,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
                     w.length_bytes, w.limit_bytes
                 ),
             };
-            println!(
-                "  ⚠  {:<50}",
-                truncate(w.path.as_ref(), 50),
-            );
+            println!("  ⚠  {:<50}", truncate(w.path.as_ref(), 50),);
             println!("     {detail}");
         }
     }
