@@ -102,6 +102,11 @@ fn draw(f: &mut ratatui::Frame, app: &mut App) {
 }
 
 fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
+    // Reset delete confirmation on any key that isn't the confirming second D press.
+    if !(code == KeyCode::Char('D') && app.view == View::Profiles) {
+        app.delete_confirm = false;
+    }
+
     match (code, modifiers) {
         (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
             app.should_quit = true;
@@ -187,6 +192,30 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
         }
         (KeyCode::Char('m'), _) if app.view == View::Profiles => {
             app.enter_player_from_profile();
+        }
+        (KeyCode::Char('D'), _) if app.view == View::Profiles => {
+            if app.profiles.is_empty() {
+                app.set_flash("no profiles to delete");
+            } else if app.delete_confirm {
+                app.delete_confirm = false;
+                let name = app
+                    .profiles
+                    .get(app.profile_idx)
+                    .map(|(n, _)| n.clone())
+                    .unwrap_or_default();
+                match app.delete_current_profile() {
+                    Ok(()) => app.set_flash(format!("deleted '{name}'")),
+                    Err(e) => app.set_flash(format!("delete failed: {e}")),
+                }
+            } else {
+                let name = app
+                    .profiles
+                    .get(app.profile_idx)
+                    .map(|(n, _)| n.as_str())
+                    .unwrap_or("?");
+                app.set_flash(format!("press D again to delete '{name}'"));
+                app.delete_confirm = true;
+            }
         }
 
         // ── Log ──────────────────────────────────────────────────────────
@@ -320,6 +349,21 @@ fn launch_sync(app: &mut App) {
 
     let run_id = crate::logging::current_run_id();
 
+    // Create SSH session before spawning the thread (auth errors surface immediately).
+    let ssh_source = if crate::ssh::SshUri::is_ssh(source.as_str()) {
+        match crate::ssh::SshUri::parse(source.as_str())
+            .and_then(|uri| crate::ssh::SshSession::connect(&uri))
+        {
+            Ok(s) => Some(s),
+            Err(e) => {
+                app.set_flash(format!("SSH error: {e}"));
+                return;
+            }
+        }
+    } else {
+        None
+    };
+
     let (tx, rx) = mpsc::channel();
 
     std::thread::spawn(move || {
@@ -331,6 +375,7 @@ fn launch_sync(app: &mut App) {
             manifest_dir,
             progress_tx: Some(tx),
             transcode: None,
+            ssh_source,
         };
         let _ = crate::transfer::execute(&plan, &source, &destination, &opts);
     });

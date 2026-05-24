@@ -58,6 +58,8 @@ pub fn render(f: &mut Frame, app: &App) {
             Span::raw(" new  "),
             kb("c", app),
             Span::raw(" clone  "),
+            kb("D", app),
+            Span::raw(" delete  "),
             kb("r", app),
             Span::raw(" refresh  "),
             kb("l", app),

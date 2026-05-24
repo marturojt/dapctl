@@ -33,7 +33,8 @@ Released as `v0.1.0`. Validated: 2,108 FLAC · 75 GB · HiBy R4 microSD.
 - [x] `logging::init`: dual sink (human + JSONL), `run_id` propagation,
       schema v1 frozen. (req 8)
 - [x] `cli`: `--yes`, `--dry-run`, exit code convention. (req 10)
-- [ ] Error taxonomy (`thiserror`) with user-facing messages vs internal. (v1.0)
+- [x] Error taxonomy (`thiserror`) with user-facing messages vs internal. (v1.0)
+      `src/error.rs`: `ConfigError`, `DapError`, `ScanError`. Exit codes 2/3 in `main.rs`.
 
 ### Config & DAP catalogue  (req 1, 3, 6)
 
@@ -224,9 +225,11 @@ See CHANGELOG [0.3.0] for the full list.
 
 ---
 
-## Milestone 5 — v1.0 Community profiles & SSH
+## Milestone 5 — v1.0 Community profiles & SSH  ·  *done (released 2026-05-06)*
 
-- [ ] SSH source via `russh`.
+- [x] SSH source — `source = "ssh://[user@]host[:port]/path"` in sync profiles.
+      `src/ssh/mod.rs`: walk via `find -printf`, download via `cat` piped stdout.
+      Auth delegated to system `ssh` (keys, agent, known_hosts). Zero new deps.
 - [x] At least 6 DAP profiles with fixtures in CI.
       7 builtins: fiio-m21, fiio-m11, ak-sr35, hiby-r6, shanling-m3ultra,
       ibasso-dx320, generic. CI validated via `all_builtin_profiles_parse`.

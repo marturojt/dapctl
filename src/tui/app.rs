@@ -565,6 +565,8 @@ pub struct App {
     pub flash: Option<String>,
     pub flash_ticks: u8,
     pub confirm_sync: bool,
+    /// True after the first `D` press in profiles view — requires a second to confirm.
+    pub delete_confirm: bool,
 
     // Diff view
     pub diff_state: DiffState,
@@ -658,6 +660,7 @@ impl App {
             flash: None,
             flash_ticks: 0,
             confirm_sync: false,
+            delete_confirm: false,
             diff_state: DiffState::Idle,
             diff_entry_idx: 0,
             diff_entry_filter: EntryFilter::All,
@@ -704,6 +707,34 @@ impl App {
         if !self.profiles.is_empty() && self.profile_idx + 1 < self.profiles.len() {
             self.profile_idx += 1;
         }
+    }
+
+    /// Delete the currently selected sync profile's .toml file and reload the list.
+    pub fn delete_current_profile(&mut self) -> anyhow::Result<()> {
+        let Some((name, _)) = self.profiles.get(self.profile_idx) else {
+            return Ok(());
+        };
+        let name = name.clone();
+        let dir = crate::config::profiles_dir()?;
+        let path = dir.join(format!("{name}.toml"));
+        std::fs::remove_file(&path)?;
+
+        // Reload profiles from disk.
+        let discovered = crate::config::discover()?;
+        self.profiles.clear();
+        for (n, p) in discovered {
+            match crate::config::load(&p) {
+                Ok(profile) => self.profiles.push((n, profile)),
+                Err(e) => tracing::warn!(profile = %p.display(), err = %e, "skipping profile"),
+            }
+        }
+
+        // Keep cursor in bounds.
+        if self.profile_idx > 0 && self.profile_idx >= self.profiles.len() {
+            self.profile_idx -= 1;
+        }
+
+        Ok(())
     }
 
     pub fn refresh_scan(&mut self) {

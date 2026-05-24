@@ -1,6 +1,8 @@
 use camino::Utf8PathBuf;
 use serde::Serialize;
 
+use crate::error::ScanError;
+
 pub mod heuristic;
 pub mod removable;
 
@@ -109,10 +111,10 @@ pub fn resolve_destination(destination: &str) -> anyhow::Result<Utf8PathBuf> {
         }
     }
 
-    anyhow::bail!(
-        "no connected drive identified as DAP {dap_id:?}; \
-         run `dapctl scan` to see connected drives"
-    )
+    Err(ScanError::DestinationNotFound {
+        dap_id: dap_id.to_owned(),
+    }
+    .into())
 }
 
 // ---------------------------------------------------------------------------

@@ -21,8 +21,17 @@ const ESTIMATED_SPEED_BPS: u64 = 30 * 1024 * 1024;
 pub fn run(args: Args, yes: bool) -> anyhow::Result<()> {
     let resolved = crate::config::resolve(&args.profile)?;
 
-    let source = camino::Utf8PathBuf::from(&resolved.sync.profile.source);
+    let source_str = &resolved.sync.profile.source;
+    let source = camino::Utf8PathBuf::from(source_str);
     let destination = crate::scan::resolve_destination(&resolved.sync.profile.destination)?;
+
+    // Establish SSH session early so auth errors surface before the diff.
+    let ssh_session = if crate::ssh::SshUri::is_ssh(source_str) {
+        let uri = crate::ssh::SshUri::parse(source_str)?;
+        Some(crate::ssh::SshSession::connect(&uri)?)
+    } else {
+        None
+    };
 
     // Determine effective dry-run: explicit flag > --yes > profile default.
     let dry_run = if args.dry_run {
@@ -47,10 +56,12 @@ pub fn run(args: Args, yes: bool) -> anyhow::Result<()> {
         dry_run,
     );
 
-    // Repair destination mtimes for files copied without mtime preservation.
-    let repaired = crate::transfer::repair_dest_mtimes(&source, &destination);
-    if repaired > 0 {
-        eprintln!("  repaired mtimes for {repaired} file(s)");
+    // Repair destination mtimes (local sources only — no local access for SSH).
+    if ssh_session.is_none() {
+        let repaired = crate::transfer::repair_dest_mtimes(&source, &destination);
+        if repaired > 0 {
+            eprintln!("  repaired mtimes for {repaired} file(s)");
+        }
     }
 
     // ── Diff ──────────────────────────────────────────────────────────────
@@ -146,6 +157,7 @@ pub fn run(args: Args, yes: bool) -> anyhow::Result<()> {
         manifest_dir,
         progress_tx: None,
         transcode,
+        ssh_source: ssh_session,
     };
 
     let stats = crate::transfer::execute(plan, &source, &destination, &opts)?;

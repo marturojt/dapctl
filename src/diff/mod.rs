@@ -41,15 +41,24 @@ pub fn diff(
         &[]
     };
 
-    // Destination is walked WITHOUT transcode projection — it contains real files.
-    let src_entries = walker::walk(
-        source,
-        &exclude,
-        include.as_ref(),
-        compute_hashes,
-        &profile.sync.filters,
-        transcode_rules,
-    )?;
+    // Source: local filesystem or SSH remote.
+    let src_entries = if crate::ssh::SshUri::is_ssh(source.as_str()) {
+        let uri = crate::ssh::SshUri::parse(source.as_str())?;
+        let session = crate::ssh::SshSession::connect(&uri)?;
+        // Tag filters and blake3 hashes are not available for remote sources.
+        session.walk(&exclude, include.as_ref())?
+    } else {
+        walker::walk(
+            source,
+            &exclude,
+            include.as_ref(),
+            compute_hashes,
+            &profile.sync.filters,
+            transcode_rules,
+        )?
+    };
+
+    // Destination is always local and walked WITHOUT transcode projection.
     let dst_entries = walker::walk(
         destination,
         &exclude,

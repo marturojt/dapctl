@@ -6,6 +6,8 @@
 //! presentation layer.
 
 pub mod audit;
+pub mod error;
+pub mod ssh;
 pub mod cli;
 pub mod config;
 pub mod cover;

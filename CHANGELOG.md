@@ -8,6 +8,52 @@ Versioning: [SemVer](https://semver.org/).
 
 ---
 
+## [1.0.0] — 2026-05-06
+
+### Added
+- **SSH source** (`src/ssh/mod.rs`): `source = "ssh://[user@]host[:port]/path"` in sync
+  profiles. Directory listing via `find -printf` over SSH; file download via `cat` piped
+  stdout. Authentication fully delegated to the system `ssh` binary — keys, agent,
+  `known_hosts`, and `~/.ssh/config` all work with no extra configuration. Zero new Cargo
+  dependencies.
+- **`dapctl cover embed <path> [--overwrite]`** (`cover::embed`): writes cover art from
+  `folder.jpg` or the first embedded picture into every track tag in the folder.
+  Supports FLAC, MP3, M4A, OGG, and Opus. Does not re-embed when art already present
+  unless `--overwrite` is passed.
+- **`dapctl profile delete <name> [-y]`** — removes the sync profile TOML. Prompts for
+  confirmation unless `--yes` / `-y`. TUI: `D` key on the profiles list (two-press confirm,
+  same safety pattern as mirror-mode sync).
+- **5 new builtin DAP profiles** (7 total including fiio-m21 and generic):
+  `fiio-m11`, `ak-sr35`, `hiby-r6`, `shanling-m3ultra`, `ibasso-dx320`.
+  All profiles include filesystem limits, codec matrix, and firmware exclusion globs.
+  Validated in CI via `all_builtin_profiles_parse`.
+- **`PathWarning` / `check_path_limits`** in `diff`: warns when a source filename or
+  full path would exceed the DAP firmware's declared limits. Shown in both `dapctl diff`
+  output and the TUI diff view. Severity and limits are read from the active DAP profile.
+- **Snapshot tests** (`tests/snapshots.rs`): 10 `insta` snapshot tests covering plan
+  serialisation, path-limit logic, and the full DAP catalogue. Total tests: 54.
+- **Error taxonomy** (`src/error.rs`): typed `thiserror` enums — `ConfigError`,
+  `DapError`, `ScanError` — with structured user-facing messages. `main.rs` routes exit
+  codes: 2 for config/DAP errors, 3 for scan/environment errors, 1 for all others.
+- **`NO_COLOR` support** in `Theme::new()`: when the `NO_COLOR` environment variable is
+  set, all TUI colours collapse to terminal defaults (https://no-color.org).
+- **Volume label detection on Linux and macOS**: `lsblk -o LABEL,MOUNTPOINT -P -n` on
+  Linux; `diskutil info <mount>` on macOS. Completes cross-platform label detection
+  alongside the existing Windows `GetVolumeInformationW` implementation.
+- **Selective mode write-back** via `toml_edit`: `x` key in the TUI diff view toggles
+  album-level selection (◆/◇); confirmed selections are persisted back to the sync
+  profile TOML, preserving comments and formatting.
+- **Packaging skeletons**: Scoop manifest (`packaging/scoop/dapctl.json`) with
+  autoupdate block; AUR `PKGBUILD` (`packaging/aur/PKGBUILD`) for the `-bin` variant.
+
+### Changed
+- Homebrew tap (`marturojt/tap`) now has `dapctl.rb` updated to the v1.0.0 formula.
+
+### Removed
+- `[Unreleased]` entry cleared (all items shipped in this release).
+
+---
+
 ## [0.4.0] — 2026-05-05
 
 ### Added
@@ -256,6 +302,7 @@ Versioning: [SemVer](https://semver.org/).
 - Mirror mode: orphan detection and deletion confirmed.
 - Re-run idempotency: 2,108 unchanged, 0 copied, 0 failed.
 
+[1.0.0]: https://github.com/marturojt/dapctl/releases/tag/v1.0.0
 [0.3.0]: https://github.com/marturojt/dapctl/releases/tag/v0.3.0
 [0.2.0]: https://github.com/marturojt/dapctl/releases/tag/v0.2.0
 [0.1.0]: https://github.com/marturojt/dapctl/releases/tag/v0.1.0

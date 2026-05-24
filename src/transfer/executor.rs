@@ -33,6 +33,10 @@ pub struct Options {
     /// When set, files with a matching `transcode_from` in the plan are run
     /// through ffmpeg instead of being copied directly.
     pub transcode: Option<TranscodeOpts>,
+    /// When set, files are downloaded from the remote via SFTP instead of
+    /// copied from a local path. `src_root` passed to `execute` is ignored
+    /// for the copy loop (but still used for mtime preservation fallback).
+    pub ssh_source: Option<crate::ssh::SshSession>,
 }
 
 pub struct TranscodeOpts {
@@ -149,42 +153,61 @@ pub fn execute(
             });
         }
 
-        // Decide copy strategy: direct copy or transcode via ffmpeg.
-        let copy_result =
-            if let (Some(from_ext), Some(ref tc)) = (&entry.transcode_from, &opts.transcode) {
-                // Locate the actual source file using the original extension.
-                let src_path = entry.path.with_extension(from_ext);
-                let actual_src = src_root.join(&src_path);
-                let rule = tc
-                    .rules
-                    .iter()
-                    .find(|r| r.from.to_lowercase() == from_ext.to_lowercase());
-
-                if let Some(rule) = rule {
-                    file_bar.set_length(0); // indeterminate during transcode
-                    file_bar.set_message(format!("[TC] {}", truncate_path(&entry.path, 65)));
-                    do_transcode(&actual_src, &dst, &tmp, rule, tc)
-                } else {
-                    // Rule disappeared at runtime — fall back to direct copy.
-                    let src = src_root.join(&entry.path);
-                    file_bar.set_length(entry.size_bytes);
-                    file_bar.set_position(0);
-                    file_bar.set_message(truncate_path(&entry.path, 70));
-                    copy_with_progress(&src, &tmp, &file_bar, &overall, opts.progress_tx.as_ref())
+        // Decide copy strategy: SSH download, transcode via ffmpeg, or direct copy.
+        let copy_result = if let Some(ref ssh) = opts.ssh_source {
+            // Remote source: download via SFTP.
+            file_bar.set_length(entry.size_bytes);
+            file_bar.set_position(0);
+            file_bar.set_message(truncate_path(&entry.path, 70));
+            let pb_ref = &file_bar;
+            let ov_ref = &overall;
+            let tx_ref = opts.progress_tx.as_ref();
+            ssh.download(entry.path.as_str(), &tmp, move |n| {
+                pb_ref.inc(n);
+                ov_ref.inc(n);
+                if let Some(tx) = tx_ref {
+                    let _ = tx.send(ProgressEvent::FileProgress { bytes: n });
                 }
+            })
+        } else if let (Some(from_ext), Some(ref tc)) = (&entry.transcode_from, &opts.transcode) {
+            // Locate the actual source file using the original extension.
+            let src_path = entry.path.with_extension(from_ext);
+            let actual_src = src_root.join(&src_path);
+            let rule = tc
+                .rules
+                .iter()
+                .find(|r| r.from.to_lowercase() == from_ext.to_lowercase());
+
+            if let Some(rule) = rule {
+                file_bar.set_length(0); // indeterminate during transcode
+                file_bar.set_message(format!("[TC] {}", truncate_path(&entry.path, 65)));
+                do_transcode(&actual_src, &dst, &tmp, rule, tc)
             } else {
+                // Rule disappeared at runtime — fall back to direct copy.
                 let src = src_root.join(&entry.path);
                 file_bar.set_length(entry.size_bytes);
                 file_bar.set_position(0);
                 file_bar.set_message(truncate_path(&entry.path, 70));
                 copy_with_progress(&src, &tmp, &file_bar, &overall, opts.progress_tx.as_ref())
-            };
+            }
+        } else {
+            let src = src_root.join(&entry.path);
+            file_bar.set_length(entry.size_bytes);
+            file_bar.set_position(0);
+            file_bar.set_message(truncate_path(&entry.path, 70));
+            copy_with_progress(&src, &tmp, &file_bar, &overall, opts.progress_tx.as_ref())
+        };
 
         // ── Post-copy: rename, preserve mtime, verify ─────────────────────
-        let actual_src_for_mtime = if let Some(from_ext) = &entry.transcode_from {
-            src_root.join(entry.path.with_extension(from_ext))
+        // For SSH sources there is no local source file to read the mtime from.
+        let actual_src_for_mtime = if opts.ssh_source.is_none() {
+            if let Some(from_ext) = &entry.transcode_from {
+                src_root.join(entry.path.with_extension(from_ext))
+            } else {
+                src_root.join(&entry.path)
+            }
         } else {
-            src_root.join(&entry.path)
+            Utf8PathBuf::new() // placeholder — preserve_mtime is a no-op on empty path
         };
         let is_transcoded = entry.transcode_from.is_some();
 
@@ -199,9 +222,9 @@ pub fn execute(
 
                 preserve_mtime(&actual_src_for_mtime, &dst);
 
-                // Transcoded files verify that the output exists and is non-empty.
-                // Format-agnostic checksum comparison makes no sense across formats.
-                let verified = if is_transcoded {
+                // Transcoded or SSH-sourced files: verify output is non-empty only.
+                // Checksum comparison against a remote source is not supported.
+                let verified = if is_transcoded || opts.ssh_source.is_some() {
                     dst.metadata().is_ok_and(|m| m.len() > 0)
                 } else {
                     match opts.verify {

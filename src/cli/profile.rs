@@ -20,6 +20,14 @@ pub enum ProfileCmd {
         /// Path to the sync profile TOML file.
         path: String,
     },
+    /// Delete a sync profile by name (removes the .toml file).
+    Delete {
+        /// Profile name (without .toml extension).
+        name: String,
+        /// Skip confirmation prompt.
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
 }
 
 pub fn run(args: Args) -> anyhow::Result<()> {
@@ -27,6 +35,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
         ProfileCmd::List => cmd_list(),
         ProfileCmd::Show { id } => cmd_show(&id),
         ProfileCmd::Check { path } => cmd_check(&path),
+        ProfileCmd::Delete { name, yes } => cmd_delete(&name, yes),
     }
 }
 
@@ -91,6 +100,47 @@ fn cmd_show(id: &str) -> anyhow::Result<()> {
         println!("  {g}");
     }
 
+    Ok(())
+}
+
+fn cmd_delete(name: &str, yes: bool) -> anyhow::Result<()> {
+    let dir = crate::config::profiles_dir()?;
+    let path = dir.join(format!("{name}.toml"));
+
+    if !path.exists() {
+        return Err(crate::error::ConfigError::NotFound {
+            name: name.to_owned(),
+        }
+        .into());
+    }
+
+    // Show a brief summary so the user knows what they're deleting.
+    println!("SYNC PROFILE  {name}");
+    println!("{}", "─".repeat(42));
+    match crate::config::load(&path) {
+        Ok(p) => {
+            println!("  source      → {}", p.profile.source);
+            println!("  destination → {}", p.profile.destination);
+            println!("  mode        → {:?}", p.profile.mode);
+        }
+        Err(e) => println!("  (could not parse: {e})"),
+    }
+    println!();
+
+    if !yes {
+        use std::io::Write;
+        eprint!("Delete profile {name:?}? [y/N]: ");
+        std::io::stderr().flush()?;
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        if !matches!(input.trim().to_lowercase().as_str(), "y" | "yes") {
+            println!("Aborted.");
+            return Ok(());
+        }
+    }
+
+    std::fs::remove_file(&path)?;
+    println!("Deleted {}", path.display());
     Ok(())
 }
 

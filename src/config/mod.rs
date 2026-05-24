@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use globset::{Glob, GlobSet, GlobSetBuilder};
 
+use crate::error::ConfigError;
+
 pub mod schema;
 
 pub use schema::{Filters, Mode, Selective, SyncProfile, Transcode, TranscodeRule, Transfer, Verify};
@@ -13,11 +15,15 @@ pub use schema::{Filters, Mode, Selective, SyncProfile, Transcode, TranscodeRule
 
 /// Parse and validate a sync profile from a TOML file.
 pub fn load(path: &Path) -> anyhow::Result<SyncProfile> {
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("cannot read sync profile {path:?}"))?;
-    let profile: SyncProfile =
-        toml::from_str(&content).with_context(|| format!("invalid sync profile {path:?}"))?;
-    validate(&profile).with_context(|| format!("sync profile {path:?} failed validation"))?;
+    let content = std::fs::read_to_string(path).map_err(|e| ConfigError::Read {
+        path: path.to_owned(),
+        source: e,
+    })?;
+    let profile: SyncProfile = toml::from_str(&content).map_err(|e| ConfigError::Parse {
+        path: path.to_owned(),
+        reason: e.to_string(),
+    })?;
+    validate(&profile)?;
     Ok(profile)
 }
 
@@ -37,10 +43,10 @@ pub fn find(name_or_path: &str) -> anyhow::Result<SyncProfile> {
         return load(&candidate);
     }
 
-    anyhow::bail!(
-        "sync profile {name_or_path:?} not found \
-         (tried {candidate:?} and as a literal path)"
-    )
+    Err(ConfigError::NotFound {
+        name: name_or_path.to_owned(),
+    }
+    .into())
 }
 
 /// List all sync profiles discovered in the config profiles directory.
@@ -77,33 +83,47 @@ pub fn profiles_dir() -> anyhow::Result<PathBuf> {
 // Validation
 // ---------------------------------------------------------------------------
 
-fn validate(p: &SyncProfile) -> anyhow::Result<()> {
+fn validate(p: &SyncProfile) -> Result<(), ConfigError> {
     if p.schema_version != 1 {
-        anyhow::bail!(
-            "unsupported schema_version {} (expected 1)",
-            p.schema_version
-        );
+        return Err(ConfigError::UnsupportedVersion {
+            got: p.schema_version,
+            expected: 1,
+        });
     }
     if p.profile.name.trim().is_empty() {
-        anyhow::bail!("[profile] name is required");
+        return Err(ConfigError::MissingField {
+            section: "profile",
+            field: "name",
+        });
     }
     if p.profile.source.trim().is_empty() {
-        anyhow::bail!("[profile] source is required");
+        return Err(ConfigError::MissingField {
+            section: "profile",
+            field: "source",
+        });
     }
     if p.profile.destination.trim().is_empty() {
-        anyhow::bail!("[profile] destination is required");
+        return Err(ConfigError::MissingField {
+            section: "profile",
+            field: "destination",
+        });
     }
     if p.profile.dap_profile.trim().is_empty() {
-        anyhow::bail!("[profile] dap_profile is required");
+        return Err(ConfigError::MissingField {
+            section: "profile",
+            field: "dap_profile",
+        });
     }
-    // Validate globs are parseable
     for g in p
         .filters
         .include_globs
         .iter()
         .chain(&p.filters.exclude_globs)
     {
-        Glob::new(g).with_context(|| format!("invalid glob {g:?}"))?;
+        Glob::new(g).map_err(|e| ConfigError::InvalidGlob {
+            pattern: g.clone(),
+            reason: e.to_string(),
+        })?;
     }
     Ok(())
 }

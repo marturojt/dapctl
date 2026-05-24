@@ -10,9 +10,16 @@ limits, supported codecs, cache folders to exclude.
 
 ## Status
 
-**v0.4.0 released.**
+**v1.0.0 released.**
 
-v0.4 adds: synced lyrics (`.lrc` auto-scroll, `i` toggle), play
+v1.0 adds: SSH source (`ssh://[user@]host/path` — sync from a remote library with
+zero extra dependencies), `dapctl cover embed` (write cover art into FLAC/MP3/M4A/OGG/Opus
+tags from `folder.jpg`), `dapctl profile delete` (CLI + TUI `D` key with two-press
+confirm), 5 new builtin DAP profiles (fiio-m11, ak-sr35, hiby-r6, shanling-m3ultra,
+ibasso-dx320 — 7 total), path-limit warnings from DAP firmware spec, `NO_COLOR` support,
+typed error taxonomy with exit codes 2/3, selective mode write-back, snapshot tests.
+
+v0.4 added: synced lyrics (`.lrc` auto-scroll, `i` toggle), play
 history + resume position, sleep timer, equalizer animation, library
 normalisation (case + diacritics — "Rosalía" and "Rosalia" merge),
 `dapctl audit` (offline library health: missing tags, absent covers,
@@ -78,12 +85,14 @@ dapctl scan --json
 dapctl profile list             # list DAP profiles + user sync profiles
 dapctl profile show <dap-id>    # full DAP profile details
 dapctl profile check <file>     # validate a sync profile TOML
+dapctl profile delete <name>    # remove a sync profile (prompts for confirmation)
 dapctl log                      # tail the structured log
 dapctl export m3u <profile>     # generate M3U playlist for the DAP
 dapctl export m3u <profile> -o playlist.m3u
 dapctl audit <path>             # offline library health report (tags, covers, gaps)
 dapctl audit <path> --json
 dapctl cover fetch <path> --online   # download missing folder.jpg (opt-in)
+dapctl cover embed <path>            # embed folder.jpg into track tags
 ```
 
 Inside the TUI, press `m` from the profiles screen to open the audio
@@ -117,12 +126,16 @@ are skipped with a warning.
 
 ## DAP profiles
 
-dapctl ships builtin profiles for:
+dapctl ships 7 builtin profiles:
 - **FiiO M21** (`fiio-m21`) — ground-truth device of the author
+- **FiiO M11** (`fiio-m11`)
+- **Astell&Kern SR35** (`ak-sr35`)
+- **HiBy R6** (`hiby-r6`)
+- **Shanling M3 Ultra** (`shanling-m3ultra`)
+- **iBasso DX320** (`ibasso-dx320`)
 - **Generic** (`generic`) — conservative fallback for any DAP
 
-Profiles for AK SR35 and HiBy R6 are stubs pending contributor
-fixtures. See [`docs/DAP_PROFILE_SPEC.md`](docs/DAP_PROFILE_SPEC.md)
+See [`docs/DAP_PROFILE_SPEC.md`](docs/DAP_PROFILE_SPEC.md)
 to add your device.
 
 ## Contributing
@@ -140,7 +153,8 @@ valuable contribution is a **DAP profile** for a device you own.
 - No GUI. Ever.
 - **Offline by default.** No telemetry. `dapctl cover fetch` and
   `dapctl audit` make network calls only when you pass `--online`
-  explicitly. SSH source support is planned for v1.0.
+  explicitly. SSH source (`ssh://host/path`) is opt-in and uses your
+  existing `~/.ssh` config.
 
 ## License
 
